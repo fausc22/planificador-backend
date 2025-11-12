@@ -7,6 +7,9 @@ const { verificarToken } = require('../middlewares/authMiddleware');
 // Aplicar middleware de autenticación a todas las rutas
 router.use(verificarToken);
 
+// GET - Obtener todos los registros del mes (con filtro opcional de empleado)
+router.get('/:anio/:mes', controlHsController.obtenerTodosControlHoras);
+
 // GET - Obtener control de horas por empleado, mes y año
 router.get('/:anio/:mes/:nombre_empleado', controlHsController.obtenerControlHoras);
 

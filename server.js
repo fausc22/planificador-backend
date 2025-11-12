@@ -16,6 +16,7 @@ const controlHsRoutes = require('./routes/controlHsRoutes');
 const logueoRoutes = require('./routes/logueoRoutes');
 const extrasRoutes = require('./routes/extrasRoutes');
 const recibosRoutes = require('./routes/recibosRoutes');
+const marcacionesRoutes = require('./routes/marcacionesRoutes');
 const testUploadRoutes = require('./routes/testUpload');
 
 // Importar middlewares
@@ -74,7 +75,8 @@ app.get('/', (req, res) => {
             controlHs: '/api/control-hs',
             logueo: '/api/logueo',
             extras: '/api/extras',
-            recibos: '/api/recibos'
+            recibos: '/api/recibos',
+            marcaciones: '/api/marcaciones'
         }
     });
 });
@@ -100,6 +102,7 @@ app.use('/api/control-hs', controlHsRoutes);
 app.use('/api/logueo', logueoRoutes);
 app.use('/api/extras', extrasRoutes);
 app.use('/api/recibos', recibosRoutes);
+app.use('/api/marcaciones', marcacionesRoutes); // Rutas de marcación (públicas y protegidas)
 app.use('/api', testUploadRoutes); // Ruta de prueba
 
 // ========================================

@@ -1,6 +1,61 @@
 // controllers/extrasController.js - Gestión de pagos extras
 const db = require('./dbPromise');
 
+// Obtener todos los pagos extras de un mes/año (con filtro opcional de empleado)
+exports.obtenerTodosExtras = async (req, res) => {
+    try {
+        const { anio, mes } = req.params;
+        const { nombre_empleado } = req.query;
+        const tabla = `extras_${anio}`;
+
+        let query = `SELECT * FROM ${tabla} WHERE mes = ?`;
+        let params = [mes];
+
+        if (nombre_empleado && nombre_empleado !== '') {
+            query += ` AND nombre_empleado = ?`;
+            params.push(nombre_empleado);
+        }
+
+        query += ` ORDER BY id DESC`;
+
+        const [extras] = await db.execute(query, params);
+
+        // Calcular totales (detalle: 1 = bonificación, 2 = deducción)
+        let totalBonificaciones = 0;
+        let totalDeducciones = 0;
+
+        extras.forEach(extra => {
+            if (extra.detalle === 1) {
+                totalBonificaciones += extra.monto;
+            } else if (extra.detalle === 2) {
+                totalDeducciones += extra.monto;
+            }
+        });
+
+        res.json({
+            success: true,
+            anio,
+            mes,
+            empleado: nombre_empleado || 'todos',
+            count: extras.length,
+            extras,
+            totales: {
+                bonificaciones: totalBonificaciones,
+                deducciones: totalDeducciones,
+                neto: totalBonificaciones - totalDeducciones
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Error al obtener extras:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al obtener pagos extras',
+            error: error.message
+        });
+    }
+};
+
 // Obtener pagos extras por empleado, mes y año
 exports.obtenerExtras = async (req, res) => {
     try {
@@ -12,15 +67,15 @@ exports.obtenerExtras = async (req, res) => {
             [nombre_empleado, mes]
         );
 
-        // Calcular totales
-        let totalSuma = 0;
-        let totalResta = 0;
+        // Calcular totales (detalle: 1 = bonificación, 2 = deducción)
+        let totalBonificaciones = 0;
+        let totalDeducciones = 0;
 
         extras.forEach(extra => {
             if (extra.detalle === 1) {
-                totalSuma += extra.monto;
-            } else if (extra.detalle === 0) {
-                totalResta += extra.monto;
+                totalBonificaciones += extra.monto;
+            } else if (extra.detalle === 2) {
+                totalDeducciones += extra.monto;
             }
         });
 
@@ -32,9 +87,9 @@ exports.obtenerExtras = async (req, res) => {
             count: extras.length,
             extras,
             totales: {
-                suma: totalSuma,
-                resta: totalResta,
-                neto: totalSuma - totalResta
+                bonificaciones: totalBonificaciones,
+                deducciones: totalDeducciones,
+                neto: totalBonificaciones - totalDeducciones
             }
         });
 
@@ -48,34 +103,6 @@ exports.obtenerExtras = async (req, res) => {
     }
 };
 
-// Obtener todos los extras de un mes (para todos los empleados)
-exports.obtenerExtrasPorMes = async (req, res) => {
-    try {
-        const { anio, mes } = req.params;
-        const tabla = `extras_${anio}`;
-
-        const [extras] = await db.execute(
-            `SELECT * FROM ${tabla} WHERE mes = ? ORDER BY nombre_empleado, id`,
-            [mes]
-        );
-
-        res.json({
-            success: true,
-            anio,
-            mes,
-            count: extras.length,
-            extras
-        });
-
-    } catch (error) {
-        console.error('❌ Error al obtener extras:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error al obtener pagos extras',
-            error: error.message
-        });
-    }
-};
 
 // Crear pago extra
 exports.crearExtra = async (req, res) => {
@@ -90,11 +117,11 @@ exports.crearExtra = async (req, res) => {
             });
         }
 
-        // detalle: 1 = suma (premio, vacaciones, etc), 0 = resta (adelanto, consumos, etc)
-        if (detalle !== 0 && detalle !== 1) {
+        // detalle: 1 = bonificación, 2 = deducción
+        if (detalle !== 1 && detalle !== 2) {
             return res.status(400).json({
                 success: false,
-                message: 'Detalle debe ser 0 (resta) o 1 (suma)'
+                message: 'Detalle debe ser 1 (bonificación) o 2 (deducción)'
             });
         }
 
@@ -225,14 +252,14 @@ exports.obtenerDescripcionSumas = async (req, res) => {
     }
 };
 
-// Obtener descripción de adelantos/restas para un empleado
+// Obtener descripción de deducciones para un empleado
 exports.obtenerDescripcionRestas = async (req, res) => {
     try {
         const { anio, mes, nombre_empleado } = req.params;
         const tabla = `extras_${anio}`;
 
         const [extras] = await db.execute(
-            `SELECT * FROM ${tabla} WHERE nombre_empleado = ? AND mes = ? AND detalle = 0`,
+            `SELECT * FROM ${tabla} WHERE nombre_empleado = ? AND mes = ? AND detalle = 2`,
             [nombre_empleado, mes]
         );
 

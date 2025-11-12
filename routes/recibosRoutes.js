@@ -13,11 +13,17 @@ router.get('/:nombre_empleado/:mes/:anio', recibosController.obtenerRecibo);
 // GET - Cargar datos de recibo (genera automáticamente si no existe)
 router.get('/:nombre_empleado/:mes/:anio/datos', recibosController.cargarDatosRecibo);
 
+// GET - Generar PDF del recibo
+router.get('/:nombre_empleado/:mes/:anio/pdf', recibosController.generarPDFRecibo);
+
 // GET - Obtener todos los recibos de un mes/año
 router.get('/:mes/:anio', recibosController.obtenerRecibosPorMes);
 
 // POST - Guardar o actualizar recibo
 router.post('/', recibosController.guardarRecibo);
+
+// POST - Restablecer recibo (recalcula desde tablas originales)
+router.post('/:nombre_empleado/:mes/:anio/restablecer', recibosController.restablecerRecibo);
 
 // DELETE - Eliminar recibo
 router.delete('/:nombre_empleado/:mes/:anio', recibosController.eliminarRecibo);

@@ -2,12 +2,27 @@
 const db = require('./dbPromise');
 const { validarFormatoFecha, obtenerNumeroMes, obtenerNombreMes } = require('../utils/dateUtils');
 
-// Obtener todas las vacaciones
+// Obtener todas las vacaciones (con filtro opcional de empleado y año)
 exports.obtenerVacaciones = async (req, res) => {
     try {
-        const [vacaciones] = await db.execute(
-            'SELECT * FROM vacaciones ORDER BY salida DESC'
-        );
+        const { nombre_empleado, anio } = req.query;
+        
+        let query = 'SELECT * FROM vacaciones WHERE 1=1';
+        let params = [];
+
+        if (nombre_empleado && nombre_empleado !== '') {
+            query += ' AND nombre_empleado = ?';
+            params.push(nombre_empleado);
+        }
+
+        if (anio) {
+            query += ' AND (salida LIKE ? OR regreso LIKE ?)';
+            params.push(`%/${anio}`, `%/${anio}`);
+        }
+
+        query += ' ORDER BY salida DESC';
+
+        const [vacaciones] = await db.execute(query, params);
 
         res.json({
             success: true,
@@ -73,7 +88,7 @@ exports.crearVacaciones = async (req, res) => {
 
         // Obtener días de vacaciones disponibles
         const [empleados] = await db.execute(
-            'SELECT dia_vacaciones, hora_normal, horas_vacaciones FROM empleados WHERE nombre = ?',
+            'SELECT dia_vacaciones, hora_normal, horas_vacaciones FROM empleados WHERE CONCAT(nombre, " ", apellido) = ?',
             [nombre_empleado]
         );
 
@@ -103,7 +118,7 @@ exports.crearVacaciones = async (req, res) => {
         if (tipo === 'vacaciones') {
             const diasRestantes = diasDisponibles - dias;
             await db.execute(
-                'UPDATE empleados SET dia_vacaciones = ? WHERE nombre = ?',
+                'UPDATE empleados SET dia_vacaciones = ? WHERE CONCAT(nombre, " ", apellido) = ?',
                 [diasRestantes, nombre_empleado]
             );
         }
@@ -143,7 +158,7 @@ exports.crearVacaciones = async (req, res) => {
 
             await db.execute(
                 `UPDATE ${tablaTurnos} SET turno = ?, horas = ?, acumulado = ? WHERE fecha = ? AND nombre_empleado = ?`,
-                [tipo, horas, acumulado, fechaStr, nombre_empleado]
+                ['VACACIONES', horas, acumulado, fechaStr, nombre_empleado]
             );
 
             if (tipo === 'vacaciones') {

@@ -2,6 +2,44 @@
 const db = require('./dbPromise');
 const { obtenerNumeroMes } = require('../utils/dateUtils');
 
+// Obtener todos los registros de control de horas por mes/año (con filtro opcional de empleado)
+exports.obtenerTodosControlHoras = async (req, res) => {
+    try {
+        const { anio, mes } = req.params;
+        const { nombre_empleado } = req.query;
+        const tabla = `controlhs_${anio}`;
+
+        let query = `SELECT * FROM ${tabla} WHERE mes = ?`;
+        let params = [mes];
+
+        if (nombre_empleado && nombre_empleado !== '') {
+            query += ` AND nombre_empleado = ?`;
+            params.push(nombre_empleado);
+        }
+
+        query += ` ORDER BY fecha DESC, id DESC`;
+
+        const [registros] = await db.execute(query, params);
+
+        res.json({
+            success: true,
+            anio,
+            mes,
+            empleado: nombre_empleado || 'todos',
+            count: registros.length,
+            registros
+        });
+
+    } catch (error) {
+        console.error('❌ Error al obtener control de horas:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al obtener control de horas',
+            error: error.message
+        });
+    }
+};
+
 // Obtener control de horas por empleado y mes
 exports.obtenerControlHoras = async (req, res) => {
     try {

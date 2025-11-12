@@ -1,21 +1,30 @@
 // controllers/logueoController.js - Gestión de logueos/fichajes
 const db = require('./dbPromise');
 
-// Obtener logueos por mes y año
+// Obtener logueos por mes y año (con filtro opcional de empleado)
 exports.obtenerLogueos = async (req, res) => {
     try {
         const { anio, mes } = req.params;
+        const { nombre_empleado } = req.query;
         const tabla = `logueo_${anio}`;
 
-        const [logueos] = await db.execute(
-            `SELECT * FROM ${tabla} WHERE mes = ? ORDER BY fecha DESC, hora DESC`,
-            [mes]
-        );
+        let query = `SELECT * FROM ${tabla} WHERE mes = ?`;
+        let params = [mes];
+
+        if (nombre_empleado && nombre_empleado !== '') {
+            query += ` AND nombre_empleado = ?`;
+            params.push(nombre_empleado);
+        }
+
+        query += ` ORDER BY fecha DESC, hora DESC`;
+
+        const [logueos] = await db.execute(query, params);
 
         res.json({
             success: true,
             anio,
             mes,
+            empleado: nombre_empleado || 'todos',
             count: logueos.length,
             logueos
         });

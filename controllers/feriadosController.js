@@ -151,9 +151,12 @@ exports.crearFeriado = async (req, res) => {
             });
         }
 
+        // Extraer año de la fecha (DD/MM/YYYY -> YYYY)
+        const anio = fecha.split('/')[2];
+
         const [result] = await db.execute(
             'INSERT INTO feriados (fecha, festejo, dia, periodo) VALUES (?, ?, ?, ?)',
-            [fecha, festejo, dia, periodo || null]
+            [fecha, festejo, dia, periodo || anio]
         );
 
         res.status(201).json({
@@ -197,9 +200,12 @@ exports.actualizarFeriado = async (req, res) => {
             });
         }
 
+        // Extraer año de la fecha si se proporciona
+        const periodoFinal = periodo || (fecha ? fecha.split('/')[2] : null);
+
         await db.execute(
             'UPDATE feriados SET fecha = ?, festejo = ?, dia = ?, periodo = ? WHERE id = ?',
-            [fecha, festejo, dia, periodo, id]
+            [fecha, festejo, dia, periodoFinal, id]
         );
 
         res.json({

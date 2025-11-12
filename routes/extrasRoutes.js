@@ -7,11 +7,11 @@ const { verificarToken } = require('../middlewares/authMiddleware');
 // Aplicar middleware de autenticación a todas las rutas
 router.use(verificarToken);
 
+// GET - Obtener todos los extras de un mes (con filtro opcional de empleado)
+router.get('/:anio/:mes', extrasController.obtenerTodosExtras);
+
 // GET - Obtener extras de un empleado en un mes
 router.get('/:anio/:mes/:nombre_empleado', extrasController.obtenerExtras);
-
-// GET - Obtener todos los extras de un mes
-router.get('/:anio/:mes', extrasController.obtenerExtrasPorMes);
 
 // GET - Obtener descripción de sumas (premios, vacaciones, etc)
 router.get('/:anio/:mes/:nombre_empleado/sumas', extrasController.obtenerDescripcionSumas);
