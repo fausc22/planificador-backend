@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>RECIBO DE SUELDO</title>
+    <style>
+        table.border {
+            border-collapse: collapse;
+        }
+
+            table.border th {
+                padding: 5px;
+                border: 1px solid black;
+            }
+
+            table.border td {
+                padding: 5px;
+                border: 1px solid black;
+            }
+
+        .nowrap {
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <table style="width:100%">
+        <tr>
+            <td style="width:20%"></td>
+            <td style="width:60%" align="center" valign="top">
+                <table>
+                    <tr><td align="center"><h4 style="margin:0px">PUNTO SUR MULTIMERCADO</h4></td></tr>
+                    <tr><td align="center">RECIBO DE SUELDO</td></tr>            
+                </table>
+            </td>
+        </tr>
+
+        <tr><td colspan="3" height="20"></td></tr>
+
+        <tr>
+            <td colspan="2">
+                
+                <table style="width:100%">
+                    <tr>
+                        <td style="width:20%">EMPLEADO:</td>
+                        <td style="width:30%;border-bottom:1px solid black">@nombreEmpleado</td>
+						
+                        <td style="width:10%">MES:</td>
+                        <td style="width:20%;border-bottom:1px solid black">@mes</td>
+                    </tr>
+                </table>
+            </td>
+            <td></td>
+        </tr>
+
+        <tr><td colspan="3" height="30"></td></tr>
+
+        <tr>
+            <td colspan="3">
+                <table class="border" style="width:100%;">
+                    <thead>
+                        <tr style="background-color:#D8D8D8">
+                            <th>DATOS MENSUALES</th>
+                            <th>DESCRIPCIÓN</th>
+                            <th>CANT. EN HORAS</th>
+                            <th>ACUMULADO ($ARS)</th>
+
+
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!--<tr>
+                            <td>1</td>
+                            <td>sdafsda</td>
+                            <td>2.4</td>
+                            <td>2.4</td>
+                        </tr>-->
+                        @FILAS1
+                        <tr>
+                            <td style="border: 0px !important"></td>
+                            <td style="border: 0px !important"></td>
+                            <td style="background-color: lightblue;" align="right">SUBTOTAL:</td>
+                            <td style="background-color: lightblue;">@subTotal1</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </td>
+        </tr>
+		
+		<tr><td colspan="3" height="30"></td></tr>
+
+        <tr>
+            <td colspan="3">
+                <table class="border" style="width:100%;">
+                    <thead>
+                        <tr style="background-color:#D8D8D8">
+                            <th>DATOS MENSUALES</th>
+                            <th>DESCRIPCIÓN</th>
+                            
+                            <th>ACUMULADO ($ARS)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!--<tr>
+                            <td>1</td>
+                            <td>sdafsda</td>
+                            <td>2.4</td>
+                            <td>2.4</td>
+                        </tr>-->
+                        @FILAS2
+                        <tr>
+                            <td style="border: 0px !important"></td>
+                            
+                            <td style="background-color: lightblue;" align="right">SUBTOTAL:</td>
+                            <td style="background-color: lightblue;" >@subTotal2</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </td>
+        </tr>
+		
+		<tr >
+            <td colspan="3">
+                <table class="border" style="width:100%;">
+                    
+                    <tr >
+                            <td style="border: 0px !important"></td>
+                            <td style="border: 0px !important"></td>
+                            <td style="background-color: lightgreen;" align="right">TOTAL:</td>
+                            <td style="background-color: lightgreen;">@total</td>
+                        </tr>
+                </table>
+            </td>
+        </tr>
+		
+		
+    </table>
+</body>
+</html>
