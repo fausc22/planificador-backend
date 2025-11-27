@@ -92,17 +92,62 @@ exports.crearTurno = async (req, res) => {
     try {
         const { turnos, horaInicio, horaFin, horas } = req.body;
 
-        // Validaciones
-        if (!turnos || horaInicio === undefined || horaFin === undefined || !horas) {
+        // Validaciones básicas
+        if (!turnos || horaInicio === undefined || horaFin === undefined || horas === undefined || horas === null) {
             return res.status(400).json({
                 success: false,
                 message: 'Faltan campos obligatorios'
             });
         }
 
+        // Validar que el nombre del turno no esté duplicado
+        const [turnosExistentes] = await db.execute(
+            'SELECT id FROM horarios WHERE turnos = ?',
+            [turnos.trim()]
+        );
+
+        if (turnosExistentes.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: `Ya existe un turno con el nombre "${turnos.trim()}"`
+            });
+        }
+
+        // Validar rango de horas
+        const inicio = parseInt(horaInicio);
+        const fin = parseInt(horaFin);
+        const horasNum = parseInt(horas);
+
+        if (inicio < 0 || inicio > 23 || fin < 0 || fin > 23) {
+            return res.status(400).json({
+                success: false,
+                message: 'Las horas deben estar entre 0 y 23'
+            });
+        }
+
+        if (horasNum < 0 || horasNum > 24) {
+            return res.status(400).json({
+                success: false,
+                message: 'El total de horas debe estar entre 0 y 24'
+            });
+        }
+
+        // Validar que las horas coincidan con el cálculo
+        let horasCalculadas = fin - inicio;
+        if (horasCalculadas < 0) {
+            horasCalculadas = 24 + horasCalculadas; // Turno que cruza medianoche
+        }
+
+        if (horasCalculadas !== horasNum) {
+            return res.status(400).json({
+                success: false,
+                message: `Las horas ingresadas (${horasNum}) no coinciden con el cálculo (${horasCalculadas} horas)`
+            });
+        }
+
         const [result] = await db.execute(
             'INSERT INTO horarios (turnos, horaInicio, horaFin, horas) VALUES (?, ?, ?, ?)',
-            [turnos, horaInicio, horaFin, horas]
+            [turnos.trim(), inicio, fin, horasNum]
         );
 
         res.status(201).json({
@@ -112,6 +157,15 @@ exports.crearTurno = async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Error al crear turno:', error);
+        
+        // Manejar error de duplicado
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(400).json({
+                success: false,
+                message: 'Ya existe un turno con ese nombre'
+            });
+        }
+
         res.status(500).json({
             success: false,
             message: 'Error al crear turno',
@@ -128,7 +182,7 @@ exports.actualizarTurno = async (req, res) => {
 
         // Verificar que el turno existe
         const [turnosExistentes] = await db.execute(
-            'SELECT id FROM horarios WHERE id = ?',
+            'SELECT id, turnos as nombre_turno FROM horarios WHERE id = ?',
             [id]
         );
 
@@ -139,9 +193,97 @@ exports.actualizarTurno = async (req, res) => {
             });
         }
 
+        // Si se está cambiando el nombre, verificar que no esté duplicado
+        if (turnos && turnos.trim() !== turnosExistentes[0].nombre_turno) {
+            const [turnosDuplicados] = await db.execute(
+                'SELECT id FROM horarios WHERE turnos = ? AND id != ?',
+                [turnos.trim(), id]
+            );
+
+            if (turnosDuplicados.length > 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Ya existe otro turno con el nombre "${turnos.trim()}"`
+                });
+            }
+        }
+
+        // Construir query dinámicamente
+        const campos = [];
+        const valores = [];
+
+        if (turnos !== undefined) {
+            campos.push('turnos = ?');
+            valores.push(turnos.trim());
+        }
+
+        if (horaInicio !== undefined) {
+            const inicio = parseInt(horaInicio);
+            if (inicio < 0 || inicio > 23) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'La hora de inicio debe estar entre 0 y 23'
+                });
+            }
+            campos.push('horaInicio = ?');
+            valores.push(inicio);
+        }
+
+        if (horaFin !== undefined) {
+            const fin = parseInt(horaFin);
+            if (fin < 0 || fin > 23) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'La hora de fin debe estar entre 0 y 23'
+                });
+            }
+            campos.push('horaFin = ?');
+            valores.push(fin);
+        }
+
+        if (horas !== undefined) {
+            const horasNum = parseInt(horas);
+            if (horasNum < 0 || horasNum > 24) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'El total de horas debe estar entre 0 y 24'
+                });
+            }
+            campos.push('horas = ?');
+            valores.push(horasNum);
+        }
+
+        // Validar que si se actualizan horaInicio, horaFin y horas, coincidan
+        if (horaInicio !== undefined && horaFin !== undefined && horas !== undefined) {
+            const inicio = parseInt(horaInicio);
+            const fin = parseInt(horaFin);
+            const horasNum = parseInt(horas);
+            
+            let horasCalculadas = fin - inicio;
+            if (horasCalculadas < 0) {
+                horasCalculadas = 24 + horasCalculadas;
+            }
+
+            if (horasCalculadas !== horasNum) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Las horas ingresadas (${horasNum}) no coinciden con el cálculo (${horasCalculadas} horas)`
+                });
+            }
+        }
+
+        if (campos.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Debe enviar al menos un campo para actualizar'
+            });
+        }
+
+        valores.push(id);
+
         await db.execute(
-            'UPDATE horarios SET turnos = ?, horaInicio = ?, horaFin = ?, horas = ? WHERE id = ?',
-            [turnos, horaInicio, horaFin, horas, id]
+            `UPDATE horarios SET ${campos.join(', ')} WHERE id = ?`,
+            valores
         );
 
         res.json({
@@ -150,6 +292,15 @@ exports.actualizarTurno = async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Error al actualizar turno:', error);
+        
+        // Manejar error de duplicado
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(400).json({
+                success: false,
+                message: 'Ya existe un turno con ese nombre'
+            });
+        }
+
         res.status(500).json({
             success: false,
             message: 'Error al actualizar turno',

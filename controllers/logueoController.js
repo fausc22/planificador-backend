@@ -1,5 +1,7 @@
 // controllers/logueoController.js - Gestión de logueos/fichajes
 const db = require('./dbPromise');
+const fs = require('fs');
+const path = require('path');
 
 // Obtener logueos por mes y año (con filtro opcional de empleado)
 exports.obtenerLogueos = async (req, res) => {
@@ -112,9 +114,46 @@ exports.crearLogueo = async (req, res) => {
             });
         }
 
+        // Verificar que la acción sea válida
+        if (accion !== 'INGRESO' && accion !== 'EGRESO') {
+            return res.status(400).json({
+                success: false,
+                message: 'La acción debe ser INGRESO o EGRESO'
+            });
+        }
+
+        const tabla = `logueo_${anio}`;
+
+        // Validar secuencia INGRESO/EGRESO
+        // Obtener el último logueo del empleado
+        const [ultimosLogueos] = await db.execute(
+            `SELECT * FROM ${tabla} WHERE nombre_empleado = ? ORDER BY id DESC LIMIT 1`,
+            [nombre_empleado]
+        );
+
+        if (ultimosLogueos.length > 0) {
+            const ultimoLogueo = ultimosLogueos[0];
+            
+            // Verificar que no haya dos INGRESO o dos EGRESO seguidos
+            if (ultimoLogueo.accion === accion) {
+                return res.status(400).json({
+                    success: false,
+                    message: `No se puede registrar ${accion}. El último registro fue ${ultimoLogueo.accion}. Debe alternar entre INGRESO y EGRESO.`
+                });
+            }
+        } else {
+            // Si no hay logueos previos, debe ser INGRESO
+            if (accion !== 'INGRESO') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'El primer logueo debe ser un INGRESO'
+                });
+            }
+        }
+
         // Obtener huella dactilar del empleado
         const [empleados] = await db.execute(
-            'SELECT huella_dactilar FROM empleados WHERE nombre = ?',
+            'SELECT huella_dactilar, hora_normal FROM empleados WHERE CONCAT(nombre, " ", apellido) = ?',
             [nombre_empleado]
         );
 
@@ -125,14 +164,28 @@ exports.crearLogueo = async (req, res) => {
             });
         }
 
-        const huella_dactilar = empleados[0].huella_dactilar;
-        const tabla = `logueo_${anio}`;
+        const huella_dactilar = empleados[0].huella_dactilar || '';
+        const hora_normal = empleados[0].hora_normal;
 
+        // Insertar el logueo
         const [result] = await db.execute(
             `INSERT INTO ${tabla} (fecha, nombre_empleado, accion, hora, mes, huella_dactilar) 
              VALUES (?, ?, ?, ?, ?, ?)`,
             [fecha, nombre_empleado, accion, hora, mes, huella_dactilar]
         );
+
+        // Si es un EGRESO, buscar el INGRESO del mismo día y actualizar control de horas
+        if (accion === 'EGRESO') {
+            const [ingresos] = await db.execute(
+                `SELECT * FROM ${tabla} WHERE nombre_empleado = ? AND fecha = ? AND accion = 'INGRESO' ORDER BY id DESC LIMIT 1`,
+                [nombre_empleado, fecha]
+            );
+
+            if (ingresos.length > 0) {
+                const ingreso = ingresos[0];
+                await actualizarControlHoras(anio, nombre_empleado, fecha, ingreso.hora, hora, mes);
+            }
+        }
 
         res.status(201).json({
             success: true,
@@ -154,20 +207,56 @@ exports.crearLogueo = async (req, res) => {
 exports.actualizarLogueo = async (req, res) => {
     try {
         const { anio, id } = req.params;
-        const { fecha, accion, hora } = req.body;
+        const { hora } = req.body;
 
         const tabla = `logueo_${anio}`;
 
-        const [result] = await db.execute(
-            `UPDATE ${tabla} SET fecha = ?, accion = ?, hora = ? WHERE id = ?`,
-            [fecha, accion, hora, id]
+        // Obtener información del logueo antes de actualizar
+        const [logueoActual] = await db.execute(
+            `SELECT * FROM ${tabla} WHERE id = ?`,
+            [id]
         );
 
-        if (result.affectedRows === 0) {
+        if (logueoActual.length === 0) {
             return res.status(404).json({
                 success: false,
                 message: 'Logueo no encontrado'
             });
+        }
+
+        const logueo = logueoActual[0];
+
+        // Actualizar la hora del logueo
+        await db.execute(
+            `UPDATE ${tabla} SET hora = ? WHERE id = ?`,
+            [hora, id]
+        );
+
+        // Si es un EGRESO, buscar el INGRESO del mismo día y actualizar el control de horas
+        if (logueo.accion === 'EGRESO') {
+            // Buscar el INGRESO correspondiente
+            const [ingresos] = await db.execute(
+                `SELECT * FROM ${tabla} WHERE nombre_empleado = ? AND fecha = ? AND accion = 'INGRESO' AND id < ? ORDER BY id DESC LIMIT 1`,
+                [logueo.nombre_empleado, logueo.fecha, id]
+            );
+
+            if (ingresos.length > 0) {
+                const ingreso = ingresos[0];
+                await actualizarControlHoras(anio, logueo.nombre_empleado, logueo.fecha, ingreso.hora, hora, logueo.mes);
+            }
+        }
+
+        // Si es un INGRESO, buscar el EGRESO del mismo día y actualizar el control de horas
+        if (logueo.accion === 'INGRESO') {
+            const [egresos] = await db.execute(
+                `SELECT * FROM ${tabla} WHERE nombre_empleado = ? AND fecha = ? AND accion = 'EGRESO' AND id > ? ORDER BY id ASC LIMIT 1`,
+                [logueo.nombre_empleado, logueo.fecha, id]
+            );
+
+            if (egresos.length > 0) {
+                const egreso = egresos[0];
+                await actualizarControlHoras(anio, logueo.nombre_empleado, logueo.fecha, hora, egreso.hora, logueo.mes);
+            }
         }
 
         res.json({
@@ -255,4 +344,144 @@ exports.verificarUltimoIngreso = async (req, res) => {
         });
     }
 };
+
+// Obtener configuración actual de logueo (contraseña y teléfono)
+exports.obtenerConfiguracionLogueo = async (req, res) => {
+    try {
+        res.json({
+            success: true,
+            contrasena: process.env.LOGIN_PASS || '251199',
+            telefono: process.env.ADMIN_PHONE || ''
+        });
+    } catch (error) {
+        console.error('❌ Error al obtener configuración:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al obtener configuración',
+            error: error.message
+        });
+    }
+};
+
+// Cambiar configuración de logueo (contraseña y teléfono)
+exports.actualizarConfiguracionLogueo = async (req, res) => {
+    try {
+        const { contrasenaNueva, telefono } = req.body;
+
+        if (!contrasenaNueva && !telefono) {
+            return res.status(400).json({
+                success: false,
+                message: 'Debe proporcionar al menos una configuración para actualizar'
+            });
+        }
+
+        // Actualizar el archivo .env
+        const envPath = path.join(__dirname, '../.env');
+        let envContent = fs.readFileSync(envPath, 'utf8');
+
+        // Actualizar contraseña si se proporciona
+        if (contrasenaNueva) {
+            const regexPass = /LOGIN_PASS=.*/;
+            if (regexPass.test(envContent)) {
+                envContent = envContent.replace(regexPass, `LOGIN_PASS=${contrasenaNueva}`);
+            } else {
+                envContent += `\nLOGIN_PASS=${contrasenaNueva}`;
+            }
+            // Actualizar la variable de entorno en memoria
+            process.env.LOGIN_PASS = contrasenaNueva;
+        }
+
+        // Actualizar teléfono si se proporciona
+        if (telefono !== undefined) {
+            const regexPhone = /ADMIN_PHONE=.*/;
+            if (regexPhone.test(envContent)) {
+                envContent = envContent.replace(regexPhone, `ADMIN_PHONE=${telefono}`);
+            } else {
+                envContent += `\nADMIN_PHONE=${telefono}`;
+            }
+            // Actualizar la variable de entorno en memoria
+            process.env.ADMIN_PHONE = telefono;
+        }
+
+        fs.writeFileSync(envPath, envContent, 'utf8');
+
+        const mensajes = [];
+        if (contrasenaNueva) mensajes.push('Contraseña');
+        if (telefono !== undefined) mensajes.push('Teléfono');
+        
+        res.json({
+            success: true,
+            message: `${mensajes.join(' y ')} actualizado${mensajes.length > 1 ? 's' : ''} exitosamente`
+        });
+
+    } catch (error) {
+        console.error('❌ Error al cambiar contraseña:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al cambiar contraseña',
+            error: error.message
+        });
+    }
+};
+
+// Función auxiliar para actualizar control de horas
+async function actualizarControlHoras(anio, nombreEmpleado, fecha, horaIngreso, horaEgreso, mes) {
+    try {
+        const tablaControlHs = `controlhs_${anio}`;
+
+        // Calcular nuevos minutos trabajados
+        const [hI, mI] = horaIngreso.split(':').map(Number);
+        const [hE, mE] = horaEgreso.split(':').map(Number);
+        
+        const minutosIngreso = hI * 60 + mI;
+        let minutosEgreso = hE * 60 + mE;
+        
+        if (minutosEgreso < minutosIngreso) {
+            minutosEgreso += 24 * 60;
+        }
+        
+        const minutosTrabajados = minutosEgreso - minutosIngreso;
+        const horasTrabajadas = Math.round((minutosTrabajados / 60) * 100) / 100;
+
+        // Obtener hora_normal del empleado
+        const [empleados] = await db.execute(
+            'SELECT hora_normal FROM empleados WHERE CONCAT(nombre, " ", apellido) = ?',
+            [nombreEmpleado]
+        );
+
+        if (empleados.length === 0) {
+            console.error('❌ Empleado no encontrado:', nombreEmpleado);
+            return;
+        }
+
+        const horaNormal = empleados[0].hora_normal;
+        const acumulado = Math.round(horasTrabajadas * horaNormal * 100) / 100;
+
+        // Buscar si existe un registro de control de horas para esta fecha y empleado
+        const [controlExistente] = await db.execute(
+            `SELECT * FROM ${tablaControlHs} WHERE fecha = ? AND nombre_empleado = ?`,
+            [fecha, nombreEmpleado]
+        );
+
+        if (controlExistente.length > 0) {
+            // Actualizar el registro existente
+            await db.execute(
+                `UPDATE ${tablaControlHs} SET hora_ingreso = ?, hora_egreso = ?, horas_trabajadas = ?, acumulado = ? WHERE fecha = ? AND nombre_empleado = ?`,
+                [horaIngreso, horaEgreso, minutosTrabajados, acumulado, fecha, nombreEmpleado]
+            );
+        } else {
+            // Crear un nuevo registro
+            await db.execute(
+                `INSERT INTO ${tablaControlHs} (fecha, nombre_empleado, hora_ingreso, hora_egreso, horas_trabajadas, acumulado, mes) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [fecha, nombreEmpleado, horaIngreso, horaEgreso, minutosTrabajados, acumulado, mes]
+            );
+        }
+
+        console.log('✅ Control de horas actualizado:', { fecha, nombreEmpleado, minutosTrabajados, acumulado });
+
+    } catch (error) {
+        console.error('❌ Error al actualizar control de horas:', error);
+        throw error;
+    }
+}
 

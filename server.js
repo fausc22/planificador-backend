@@ -17,12 +17,16 @@ const logueoRoutes = require('./routes/logueoRoutes');
 const extrasRoutes = require('./routes/extrasRoutes');
 const recibosRoutes = require('./routes/recibosRoutes');
 const marcacionesRoutes = require('./routes/marcacionesRoutes');
+const notificacionesRoutes = require('./routes/notificacionesRoutes');
 const testUploadRoutes = require('./routes/testUpload');
 
 // Importar middlewares
 const { verificarToken } = require('./middlewares/authMiddleware');
 const errorHandler = require('./middlewares/errorHandler');
 const AppError = require('./utils/AppError');
+
+// Importar worker de notificaciones (sin WhatsApp automático)
+const notificacionesWorker = require('./workers/notificacionesWorker');
 
 // Inicializar app
 const app = express();
@@ -76,7 +80,8 @@ app.get('/', (req, res) => {
             logueo: '/api/logueo',
             extras: '/api/extras',
             recibos: '/api/recibos',
-            marcaciones: '/api/marcaciones'
+            marcaciones: '/api/marcaciones',
+            notificaciones: '/api/notificaciones'
         }
     });
 });
@@ -103,6 +108,7 @@ app.use('/api/logueo', logueoRoutes);
 app.use('/api/extras', extrasRoutes);
 app.use('/api/recibos', recibosRoutes);
 app.use('/api/marcaciones', marcacionesRoutes); // Rutas de marcación (públicas y protegidas)
+app.use('/api/notificaciones', notificacionesRoutes);
 app.use('/api', testUploadRoutes); // Ruta de prueba
 
 // ========================================
@@ -121,7 +127,7 @@ app.use(errorHandler);
 // INICIAR SERVIDOR
 // ========================================
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log('\n========================================');
     console.log('🚀 SERVIDOR DE PLANIFICACIÓN INICIADO');
     console.log('========================================');
@@ -130,16 +136,23 @@ app.listen(PORT, () => {
     console.log(`🔗 URL: http://localhost:${PORT}`);
     console.log(`📚 API Docs: http://localhost:${PORT}/`);
     console.log('========================================\n');
+    
+    // Iniciar worker de notificaciones (sin WhatsApp automático)
+    // WhatsApp solo se conecta cuando se llama al endpoint de prueba
+    console.log('💡 WhatsApp: Se conectará solo cuando uses el endpoint de prueba');
+    notificacionesWorker.iniciarWorker();
 });
 
 // Manejo de cierre graceful
 process.on('SIGTERM', () => {
     console.log('🛑 SIGTERM recibido. Cerrando servidor...');
+    notificacionesWorker.detenerWorker();
     process.exit(0);
 });
 
 process.on('SIGINT', () => {
     console.log('\n🛑 SIGINT recibido. Cerrando servidor...');
+    notificacionesWorker.detenerWorker();
     process.exit(0);
 });
 

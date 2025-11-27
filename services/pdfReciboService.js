@@ -12,11 +12,11 @@ function formatearDinero(valor) {
 }
 
 /**
- * Genera la plantilla HTML del recibo basada en la plantilla original mejorada
+ * Genera la plantilla HTML del recibo con diseño mejorado
  */
 function generarPlantillaHTML(datosRecibo) {
     const { empleado, recibo, extras, mes, anio } = datosRecibo;
-    
+
     const descuento20 = Math.round(recibo.consumos * 0.8 * 100) / 100;
     const bonificaciones = extras?.suma || 0;
     const deducciones = extras?.resta || 0;
@@ -32,7 +32,7 @@ function generarPlantillaHTML(datosRecibo) {
             <td align="center">${recibo.hsPlaniCantidad} hs</td>
             <td align="right">$ ${formatearDinero(recibo.hsPlaniValor)}</td>
         </tr>
-        <tr style="background-color: #EFF6FF;">
+        <tr style="background-color: #f8fafc;">
             <td><strong>Horas Trabajadas</strong></td>
             <td><strong>Según control de horas</strong></td>
             <td align="center"><strong>${recibo.hsTrabajadasCantidad} hs</strong></td>
@@ -42,14 +42,14 @@ function generarPlantillaHTML(datosRecibo) {
 
     // Generar filas de la segunda tabla (Descuentos y Extras)
     let filas2 = '';
-    
+
     // Descuentos manuales
     if (recibo.consumos > 0) {
         filas2 += `
-            <tr style="background-color: #FEF2F2;">
+            <tr style="background-color: #fff1f2;">
                 <td>Consumos</td>
                 <td>Descuento aplicado 20%</td>
-                <td align="right" style="color: #DC2626;"><strong>- $ ${formatearDinero(descuento20)}</strong></td>
+                <td align="right" style="color: #be123c;"><strong>- $ ${formatearDinero(descuento20)}</strong></td>
             </tr>
         `;
     }
@@ -58,10 +58,10 @@ function generarPlantillaHTML(datosRecibo) {
     if (extras?.items) {
         extras.items.filter(e => e.detalle === 1).forEach(extra => {
             filas2 += `
-                <tr style="background-color: #F0FDF4;">
+                <tr style="background-color: #f0fdf4;">
                     <td><strong>${extra.categoria}</strong></td>
                     <td>${extra.descripcion}</td>
-                    <td align="right" style="color: #059669;"><strong>+ $ ${formatearDinero(extra.monto)}</strong></td>
+                    <td align="right" style="color: #15803d;"><strong>+ $ ${formatearDinero(extra.monto)}</strong></td>
                 </tr>
             `;
         });
@@ -71,17 +71,17 @@ function generarPlantillaHTML(datosRecibo) {
     if (extras?.items) {
         extras.items.filter(e => e.detalle === 2).forEach(extra => {
             filas2 += `
-                <tr style="background-color: #FEF2F2;">
+                <tr style="background-color: #fff1f2;">
                     <td><strong>${extra.categoria}</strong></td>
                     <td>${extra.descripcion}</td>
-                    <td align="right" style="color: #DC2626;"><strong>- $ ${formatearDinero(extra.monto)}</strong></td>
+                    <td align="right" style="color: #be123c;"><strong>- $ ${formatearDinero(extra.monto)}</strong></td>
                 </tr>
             `;
         });
     }
 
     if (!filas2) {
-        filas2 = '<tr><td colspan="3" align="center" style="padding: 15px; color: #6B7280; font-style: italic;">No hay descuentos ni bonificaciones adicionales</td></tr>';
+        filas2 = '<tr><td colspan="3" align="center" style="padding: 15px; color: #94a3b8; font-style: italic;">No hay descuentos ni bonificaciones adicionales</td></tr>';
     }
 
     return `
@@ -93,193 +93,257 @@ function generarPlantillaHTML(datosRecibo) {
     <style>
         @page {
             size: A4;
-            margin: 2cm;
+            margin: 1.5cm;
         }
         
         body {
-            font-family: 'Arial', 'Helvetica', sans-serif;
-            font-size: 11px;
-            color: #1F2937;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: 10pt;
+            color: #334155;
             margin: 0;
             padding: 0;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
         }
         
-        table.border {
-            border-collapse: collapse;
-            width: 100%;
-            border: 2px solid #2563EB;
-            margin-bottom: 15px;
+        /* Header Moderno */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #0f172a;
+            padding-bottom: 20px;
         }
-        
-        table.border th {
-            padding: 12px 8px;
-            border: 1px solid #93C5FD;
-            background: linear-gradient(to bottom, #3B82F6, #2563EB);
-            color: white;
-            font-weight: bold;
-            text-transform: uppercase;
-            font-size: 10px;
-            letter-spacing: 0.5px;
-        }
-        
-        table.border td {
-            padding: 10px 8px;
-            border: 1px solid #E5E7EB;
-        }
-        
-        .header-empresa {
-            text-align: center;
-            background: linear-gradient(to right, #1E40AF, #3B82F6);
-            color: white;
-            padding: 20px;
-            margin-bottom: 25px;
-            border-radius: 8px;
-        }
-        
-        .header-empresa h1 {
+
+        .empresa-info h1 {
             margin: 0;
-            font-size: 22px;
-            font-weight: bold;
+            font-size: 24px;
+            font-weight: 800;
+            color: #0f172a;
+            letter-spacing: -0.5px;
+        }
+
+        .empresa-info h2 {
+            margin: 5px 0 0 0;
+            font-size: 14px;
+            font-weight: 500;
+            color: #64748b;
+            text-transform: uppercase;
             letter-spacing: 1px;
         }
-        
-        .header-empresa h2 {
-            margin: 5px 0 0 0;
-            font-size: 16px;
-            font-weight: normal;
-            opacity: 0.95;
+
+        .recibo-titulo {
+            text-align: right;
         }
-        
-        .info-empleado {
-            background-color: #F3F4F6;
-            padding: 15px;
-            border-left: 4px solid #2563EB;
-            margin-bottom: 20px;
+
+        .recibo-titulo h3 {
+            margin: 0;
+            font-size: 18px;
+            color: #0f172a;
+            text-transform: uppercase;
+            border: 1px solid #0f172a;
+            padding: 5px 15px;
             border-radius: 4px;
         }
-        
-        .info-empleado table {
-            width: 100%;
+
+        /* Info Empleado */
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            background-color: #f8fafc;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            border: 1px solid #e2e8f0;
         }
-        
-        .info-empleado td {
-            padding: 6px 10px;
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
         }
-        
+
         .info-label {
-            font-weight: bold;
-            color: #4B5563;
-            width: 25%;
-        }
-        
-        .info-value {
-            color: #1F2937;
-            font-weight: 600;
-            border-bottom: 1px solid #D1D5DB;
-        }
-        
-        .nowrap {
-            white-space: nowrap;
-        }
-        
-        .footer {
-            margin-top: 30px;
-            padding-top: 15px;
-            border-top: 2px solid #E5E7EB;
-            text-align: center;
             font-size: 9px;
-            color: #6B7280;
+            text-transform: uppercase;
+            color: #64748b;
+            font-weight: 600;
+            margin-bottom: 2px;
         }
-        
-        .total-final {
-            background: linear-gradient(to right, #059669, #10B981) !important;
-            color: white !important;
-            font-size: 16px !important;
-            font-weight: bold !important;
-            padding: 15px !important;
+
+        .info-value {
+            font-size: 12px;
+            font-weight: 600;
+            color: #0f172a;
+        }
+
+        /* Tablas */
+        .section-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #0f172a;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            padding-left: 10px;
+            border-left: 3px solid #3b82f6;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 25px;
+            font-size: 10px;
+        }
+
+        th {
+            text-align: left;
+            padding: 10px;
+            background-color: #0f172a;
+            color: white;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 9px;
+        }
+
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* Totales */
+        .subtotal-row td {
+            background-color: #f1f5f9;
+            font-weight: 700;
+            border-top: 2px solid #cbd5e1;
+        }
+
+        .total-container {
+            margin-top: 20px;
+            background-color: #0f172a;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .total-label {
+            font-size: 14px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .total-amount {
+            font-size: 24px;
+            font-weight: 800;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 50px;
+            text-align: center;
+            font-size: 8px;
+            color: #94a3b8;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 20px;
         }
     </style>
 </head>
 <body>
-    <!-- Header Empresa -->
-    <div class="header-empresa">
-        <h1>PUNTO SUR MULTIMERCADO</h1>
-        <h2>RECIBO DE SUELDO</h2>
-    </div>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="empresa-info">
+                <h1>PUNTO SUR</h1>
+                <h2>Multimercado</h2>
+            </div>
+            <div class="recibo-titulo">
+                <h3>Recibo de Haberes</h3>
+            </div>
+        </div>
 
-    <!-- Información del Empleado -->
-    <div class="info-empleado">
+        <!-- Info Empleado -->
+        <div class="info-grid">
+            <div class="info-item">
+                <span class="info-label">Empleado</span>
+                <span class="info-value">${empleado.nombre} ${empleado.apellido}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Período Liquidado</span>
+                <span class="info-value">${mes} ${anio}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Email</span>
+                <span class="info-value">${empleado.mail || '-'}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Fecha de Emisión</span>
+                <span class="info-value">${new Date().toLocaleDateString('es-AR')}</span>
+            </div>
+        </div>
+
+        <!-- Tabla 1: Horas -->
+        <div class="section-title">Detalle de Horas</div>
         <table>
-            <tr>
-                <td class="info-label">EMPLEADO:</td>
-                <td class="info-value">${empleado.nombre} ${empleado.apellido}</td>
-                <td class="info-label">MES:</td>
-                <td class="info-value">${mes} ${anio}</td>
-            </tr>
-            <tr>
-                <td class="info-label">EMAIL:</td>
-                <td class="info-value">${empleado.mail || 'N/A'}</td>
-                <td class="info-label">FECHA EMISIÓN:</td>
-                <td class="info-value">${new Date().toLocaleDateString('es-AR')}</td>
-            </tr>
+            <thead>
+                <tr>
+                    <th width="30%">Concepto</th>
+                    <th width="40%">Descripción</th>
+                    <th width="15%" style="text-align: center;">Cantidad</th>
+                    <th width="15%" style="text-align: right;">Importe</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${filas1}
+                <tr class="subtotal-row">
+                    <td colspan="2"></td>
+                    <td align="right">SUBTOTAL</td>
+                    <td align="right">$ ${formatearDinero(subtotal1)}</td>
+                </tr>
+            </tbody>
         </table>
-    </div>
 
-    <!-- Tabla 1: Horas Trabajadas -->
-    <table class="border">
-        <thead>
-            <tr>
-                <th style="width: 25%;">CONCEPTO</th>
-                <th style="width: 40%;">DESCRIPCIÓN</th>
-                <th style="width: 15%;">CANT. EN HORAS</th>
-                <th style="width: 20%;">ACUMULADO ($ARS)</th>
-            </tr>
-        </thead>
-        <tbody>
-            ${filas1}
-            <tr>
-                <td style="border: 0px !important"></td>
-                <td style="border: 0px !important"></td>
-                <td style="background-color: #DBEAFE; padding: 12px;" align="right"><strong>SUBTOTAL:</strong></td>
-                <td style="background-color: #DBEAFE; padding: 12px;"><strong>$ ${formatearDinero(subtotal1)}</strong></td>
-            </tr>
-        </tbody>
-    </table>
+        <!-- Tabla 2: Adicionales -->
+        <div class="section-title">Adicionales y Deducciones</div>
+        <table>
+            <thead>
+                <tr>
+                    <th width="30%">Concepto</th>
+                    <th width="50%">Descripción</th>
+                    <th width="20%" style="text-align: right;">Importe</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${filas2}
+                <tr class="subtotal-row">
+                    <td colspan="1"></td>
+                    <td align="right">SUBTOTAL</td>
+                    <td align="right">$ ${formatearDinero(subtotal2)}</td>
+                </tr>
+            </tbody>
+        </table>
 
-    <!-- Tabla 2: Bonificaciones y Deducciones -->
-    <table class="border">
-        <thead>
-            <tr>
-                <th style="width: 30%;">CONCEPTO</th>
-                <th style="width: 50%;">DESCRIPCIÓN</th>
-                <th style="width: 20%;">ACUMULADO ($ARS)</th>
-            </tr>
-        </thead>
-        <tbody>
-            ${filas2}
-            <tr>
-                <td style="border: 0px !important"></td>
-                <td style="background-color: #DBEAFE; padding: 12px;" align="right"><strong>SUBTOTAL:</strong></td>
-                <td style="background-color: #DBEAFE; padding: 12px;"><strong>$ ${formatearDinero(subtotal2)}</strong></td>
-            </tr>
-        </tbody>
-    </table>
+        <!-- Total Final -->
+        <div class="total-container">
+            <span class="total-label">Neto a Cobrar</span>
+            <span class="total-amount">$ ${formatearDinero(total)}</span>
+        </div>
 
-    <!-- Total Final -->
-    <table class="border" style="border: 3px solid #059669;">
-        <tr>
-            <td style="border: 0px !important; width: 40%;"></td>
-            <td style="border: 0px !important; width: 20%;"></td>
-            <td class="total-final" align="right">TOTAL A PAGAR:</td>
-            <td class="total-final" align="right" style="font-size: 20px;">$ ${formatearDinero(total)}</td>
-        </tr>
-    </table>
-
-    <!-- Footer -->
-    <div class="footer">
-        <p><strong>PUNTO SUR MULTIMERCADO</strong></p>
-        <p>Este recibo fue generado automáticamente - ${new Date().toLocaleDateString('es-AR')} ${new Date().toLocaleTimeString('es-AR')}</p>
-        <p>Sistema de Planificador © ${new Date().getFullYear()}</p>
+        <!-- Footer -->
+        <div class="footer">
+            <p>Documento generado electrónicamente el ${new Date().toLocaleDateString('es-AR')} a las ${new Date().toLocaleTimeString('es-AR')}</p>
+            <p>PUNTO SUR MULTIMERCADO - Sistema de Gestión de Personal</p>
+        </div>
     </div>
 </body>
 </html>
@@ -291,13 +355,13 @@ function generarPlantillaHTML(datosRecibo) {
  */
 async function generarPDFRecibo(datosRecibo) {
     let browser = null;
-    
+
     try {
         console.log('🚀 Iniciando generación de PDF de recibo...');
-        
+
         // Generar HTML
         const htmlContent = generarPlantillaHTML(datosRecibo);
-        
+
         // Iniciar Puppeteer
         browser = await puppeteer.launch({
             headless: 'new',
@@ -309,14 +373,14 @@ async function generarPDFRecibo(datosRecibo) {
                 '--disable-gpu'
             ]
         });
-        
+
         const page = await browser.newPage();
-        
+
         // Configurar el contenido HTML
         await page.setContent(htmlContent, {
             waitUntil: 'networkidle0'
         });
-        
+
         // Generar PDF
         const pdfBuffer = await page.pdf({
             format: 'A4',
@@ -329,11 +393,11 @@ async function generarPDFRecibo(datosRecibo) {
             },
             preferCSSPageSize: true
         });
-        
+
         console.log('✅ PDF generado exitosamente');
-        
+
         return pdfBuffer;
-        
+
     } catch (error) {
         console.error('❌ Error generando PDF:', error);
         throw error;

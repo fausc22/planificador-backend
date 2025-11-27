@@ -30,30 +30,49 @@ exports.generarPdfPlanificador = async (req, res) => {
         const fechas = generarFechasMes(nroMes, nroAnio);
 
         // 2. Obtener empleados
-        const [empleados] = await db.execute(
-            'SELECT CONCAT(nombre, " ", apellido) as nombre_completo FROM empleados ORDER BY nombre ASC'
-        );
-        const nombresEmpleados = empleados.map(e => e.nombre_completo);
+        let queryEmpleados = 'SELECT CONCAT(nombre, " ", apellido) as nombre_completo FROM empleados ORDER BY nombre ASC';
+        let paramsEmpleados = [];
+
+        const { empleado } = req.body; // Obtener empleado del body si existe
+
+        if (empleado && empleado !== 'todos') {
+            // Si se solicita un solo empleado, filtramos la lista
+            // Nota: Esto es una optimización simple, idealmente filtraríamos en la query SQL si tuviéramos el ID
+            // pero como usamos nombres completos concatenados, lo haremos en memoria o ajustando la query
+            // Para mantener consistencia con el resto del sistema que usa nombres completos:
+        }
+
+        const [empleados] = await db.execute(queryEmpleados, paramsEmpleados);
+        let nombresEmpleados = empleados.map(e => e.nombre_completo);
+
+        if (empleado && empleado !== 'todos') {
+            nombresEmpleados = nombresEmpleados.filter(e => e === empleado);
+        }
 
         // 3. Obtener feriados
         const [feriadosResult] = await db.execute(
             `SELECT fecha FROM feriados 
              WHERE fecha LIKE ? OR fecha LIKE ?`,
             [`%/${String(nroMes).padStart(2, '0')}/${nroAnio}`,
-             `%/${nroMes}/${nroAnio}`]
+            `%/${nroMes}/${nroAnio}`]
         );
         const feriadosSet = new Set(feriadosResult.map(f => f.fecha));
 
         // 4. Obtener turnos
         const placeholders = fechas.map(() => '?').join(',');
         const fechasStr = fechas.map(f => f.fecha);
-        
-        const [turnosResult] = await db.execute(
-            `SELECT fecha, nombre_empleado, turno 
+
+        let queryTurnos = `SELECT fecha, nombre_empleado, turno 
              FROM ${tabla} 
-             WHERE fecha IN (${placeholders})`,
-            fechasStr
-        );
+             WHERE fecha IN (${placeholders})`;
+        let paramsTurnos = [...fechasStr];
+
+        if (empleado && empleado !== 'todos') {
+            queryTurnos += ' AND nombre_empleado = ?';
+            paramsTurnos.push(empleado);
+        }
+
+        const [turnosResult] = await db.execute(queryTurnos, paramsTurnos);
 
         const turnosMap = new Map();
         turnosResult.forEach(t => {
@@ -90,11 +109,11 @@ exports.generarPdfPlanificador = async (req, res) => {
 
         // 7. Enviar PDF
         const filename = `planificador_${obtenerNombreMes(nroMes)}_${nroAnio}.pdf`;
-        
+
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.setHeader('Content-Length', pdfBuffer.length);
-        
+
         console.log(`✅ PDF enviado: ${filename} (${pdfBuffer.length} bytes)`);
         res.end(pdfBuffer);
 
@@ -107,5 +126,96 @@ exports.generarPdfPlanificador = async (req, res) => {
         });
     }
 };
+
+exports.generarPdfSemanal = async (req, res) => {
+    try {
+        const { mes, anio } = req.params;
+        console.log('📄 Solicitud de PDF Semanal:', { mes, anio });
+
+        // Parsear mes
+        let nroMes = parseInt(mes);
+        if (isNaN(nroMes)) {
+            nroMes = obtenerNumeroMes(mes);
+        }
+        const nroAnio = parseInt(anio);
+
+        if (!nroMes || !nroAnio || nroMes < 1 || nroMes > 12) {
+            return res.status(400).json({
+                success: false,
+                message: 'Mes y año inválidos'
+            });
+        }
+
+        const tabla = `turnos_${nroAnio}`;
+
+        // 1. Generar fechas del mes
+        const fechas = generarFechasMes(nroMes, nroAnio);
+
+        // 2. Obtener feriados
+        const [feriadosResult] = await db.execute(
+            `SELECT fecha FROM feriados 
+             WHERE fecha LIKE ? OR fecha LIKE ?`,
+            [`%/${String(nroMes).padStart(2, '0')}/${nroAnio}`,
+            `%/${nroMes}/${nroAnio}`]
+        );
+        const feriadosSet = new Set(feriadosResult.map(f => f.fecha));
+
+        // 3. Obtener turnos
+        const placeholders = fechas.map(() => '?').join(',');
+        const fechasStr = fechas.map(f => f.fecha);
+
+        const [turnosResult] = await db.execute(
+            `SELECT fecha, nombre_empleado, turno 
+             FROM ${tabla} 
+             WHERE fecha IN (${placeholders})`,
+            fechasStr
+        );
+
+        // 4. Construir datos para PDF
+        const datosPdf = fechas.map(fechaObj => {
+            const fila = {
+                fecha: fechaObj.fecha,
+                diaSemana: fechaObj.diaSemana,
+                esFeriado: feriadosSet.has(fechaObj.fecha),
+                empleados: {}
+            };
+
+            turnosResult.filter(t => t.fecha === fechaObj.fecha).forEach(t => {
+                fila.empleados[t.nombre_empleado] = t.turno;
+            });
+
+            return fila;
+        });
+
+        // 5. Generar PDF
+        const pdfBuffer = await pdfPlanificadorService.generarPdfSemanal({
+            mes: obtenerNombreMes(nroMes),
+            anio: nroAnio,
+            fechas: datosPdf
+        });
+
+        // 6. Enviar PDF
+        const filename = `planificador_semanal_${obtenerNombreMes(nroMes)}_${nroAnio}.pdf`;
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', pdfBuffer.length);
+
+        console.log(`✅ PDF Semanal enviado: ${filename} (${pdfBuffer.length} bytes)`);
+        res.end(pdfBuffer);
+
+    } catch (error) {
+        console.error('❌ Error generando PDF semanal:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al generar PDF semanal',
+            error: error.message
+        });
+    }
+};
+
+
+
+
 
 

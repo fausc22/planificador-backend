@@ -218,8 +218,12 @@ function formatearFecha(date) {
 
 /**
  * Registra un logueo (INGRESO o EGRESO)
+ * @param {string} nombreEmpleado - Nombre completo del empleado
+ * @param {string} accion - INGRESO o EGRESO
+ * @param {string} hora - Hora en formato HH:MM:SS
+ * @param {string} fotoNombre - Nombre del archivo de foto (opcional)
  */
-async function registrarLogueo(nombreEmpleado, accion, hora) {
+async function registrarLogueo(nombreEmpleado, accion, hora, fotoNombre = null) {
     const year = getCurrentYear();
     const fecha = formatearFecha(new Date());
     const mes = new Date().toLocaleString('es-ES', { month: 'long' }).toUpperCase();
@@ -227,9 +231,9 @@ async function registrarLogueo(nombreEmpleado, accion, hora) {
     return new Promise((resolve, reject) => {
         db.query(
             `INSERT INTO logueo_${year} 
-            (fecha, nombre_empleado, accion, hora, mes) 
-            VALUES (?, ?, ?, ?, ?)`,
-            [fecha, nombreEmpleado, accion, hora, mes],
+            (fecha, nombre_empleado, accion, hora, mes, foto_logueo) 
+            VALUES (?, ?, ?, ?, ?, ?)`,
+            [fecha, nombreEmpleado, accion, hora, mes, fotoNombre],
             (error, results) => {
                 if (error) {
                     console.error('Error registrando logueo:', error);
@@ -315,10 +319,18 @@ async function registrarControlHoras(nombreEmpleado, horaIngreso, horaEgreso, ho
 
 /**
  * Procesa una marcación completa (validación + registro)
+ * @param {Object} empleado - Datos del empleado
+ * @param {string} accion - INGRESO o EGRESO
+ * @param {number} userLatitude - Latitud del usuario (opcional)
+ * @param {number} userLongitude - Longitud del usuario (opcional)
+ * @param {string} userAddress - Dirección del usuario (opcional)
+ * @param {string} fotoPath - Ruta del archivo de foto (opcional)
+ * @param {string} fotoNombre - Nombre del archivo de foto (opcional)
  */
-async function procesarMarcacion(empleado, accion, userLatitude = null, userLongitude = null, userAddress = null) {
+async function procesarMarcacion(empleado, accion, userLatitude = null, userLongitude = null, userAddress = null, fotoPath = null, fotoNombre = null) {
     try {
-        // 1. Validar ubicación
+        // 1. Validar ubicación (solo si se proporcionan coordenadas o dirección)
+        if (userLatitude || userLongitude || userAddress) {
         console.log(`📍 Validando ubicación para ${empleado.nombre} ${empleado.apellido}...`);
         const locationValidation = await validateLocation(userLatitude, userLongitude, userAddress);
         
@@ -332,11 +344,12 @@ async function procesarMarcacion(empleado, accion, userLatitude = null, userLong
                     maxDistance: locationValidation.maxDistance
                 }
             };
+            }
         }
         
         // 2. Validar acción (evitar doble ingreso/egreso)
         const nombreCompleto = `${empleado.nombre} ${empleado.apellido}`;
-        console.log(`✓ Ubicación válida. Validando acción ${accion}...`);
+        console.log(`✓ Validando acción ${accion}...`);
         
         const actionValidation = await validateAction(nombreCompleto, accion);
         
@@ -352,7 +365,7 @@ async function procesarMarcacion(empleado, accion, userLatitude = null, userLong
         const horaActual = new Date().toTimeString().split(' ')[0]; // HH:MM:SS
         console.log(`✓ Acción válida. Registrando ${accion} a las ${horaActual}...`);
         
-        await registrarLogueo(nombreCompleto, accion, horaActual);
+        await registrarLogueo(nombreCompleto, accion, horaActual, fotoNombre);
         
         let controlHsData = null;
         
@@ -378,15 +391,75 @@ async function procesarMarcacion(empleado, accion, userLatitude = null, userLong
                 empleado: nombreCompleto,
                 accion,
                 hora: horaActual,
-                distance: locationValidation.distance,
-                maxDistance: locationValidation.maxDistance,
-                ubicacion: locationValidation.formatted,
                 controlHs: controlHsData
             }
         };
         
     } catch (error) {
         console.error('❌ Error procesando marcación:', error);
+        throw error;
+    }
+}
+
+/**
+ * Procesa una marcación con foto (sin validación de ubicación)
+ * @param {Object} empleado - Datos del empleado
+ * @param {string} accion - INGRESO o EGRESO
+ * @param {string} fotoPath - Ruta del archivo de foto
+ * @param {string} fotoNombre - Nombre del archivo de foto
+ */
+async function procesarMarcacionConFoto(empleado, accion, fotoPath, fotoNombre) {
+    try {
+        // 1. Validar acción (evitar doble ingreso/egreso)
+        const nombreCompleto = `${empleado.nombre} ${empleado.apellido}`;
+        console.log(`✓ Validando acción ${accion} para ${nombreCompleto}...`);
+        
+        const actionValidation = await validateAction(nombreCompleto, accion);
+        
+        if (!actionValidation.valid) {
+            return {
+                success: false,
+                rechazado: true,
+                message: actionValidation.message
+            };
+        }
+        
+        // 2. Registrar logueo
+        const horaActual = new Date().toTimeString().split(' ')[0]; // HH:MM:SS
+        console.log(`✓ Acción válida. Registrando ${accion} a las ${horaActual}...`);
+        
+        await registrarLogueo(nombreCompleto, accion, horaActual, fotoNombre);
+        
+        let controlHsData = null;
+        
+        // 3. Si es EGRESO, calcular y registrar horas
+        if (accion === 'EGRESO' && actionValidation.ingresoData) {
+            console.log(`📊 Calculando horas trabajadas...`);
+            
+            controlHsData = await registrarControlHoras(
+                nombreCompleto,
+                actionValidation.ingresoData.hora,
+                horaActual,
+                empleado.hora_normal  // Precio por hora del empleado
+            );
+            
+            console.log(`✅ Control de horas registrado: ${controlHsData.horasTrabajadas} horas = $${controlHsData.acumulado}`);
+        }
+        
+        return {
+            success: true,
+            rechazado: false,
+            message: `${accion} registrado exitosamente`,
+            data: {
+                empleado: nombreCompleto,
+                accion,
+                hora: horaActual,
+                controlHs: controlHsData
+            }
+        };
+        
+    } catch (error) {
+        console.error('❌ Error procesando marcación con foto:', error);
         throw error;
     }
 }
@@ -460,6 +533,7 @@ module.exports = {
     validateLocation,
     validateAction,
     procesarMarcacion,
+    procesarMarcacionConFoto,
     obtenerHistorialLogueos,
     obtenerHistorialControlHs,
     getLastLogueoToday

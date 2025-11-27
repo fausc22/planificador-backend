@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const marcacionesController = require('../controllers/marcacionesController');
 const { authenticateToken, authorizeRole } = require('../middlewares/authMiddleware');
+const uploadLogueo = require('../middlewares/uploadLogueo');
 
 // ========================================
 // RUTAS PÚBLICAS (sin autenticación)
@@ -30,6 +31,23 @@ router.post('/generar-qr', marcacionesController.generarQR);
  * Público - Valida token JWT y ubicación con OpenCage API
  */
 router.post('/registrar', marcacionesController.registrarMarcacion);
+
+/**
+ * POST /api/marcaciones/registrar-con-foto
+ * Registra una marcación con foto (INGRESO o EGRESO)
+ * Body: { email, password, accion }
+ * FormData: foto (archivo de imagen)
+ * Público - Valida email, contraseña y procesa marcación con foto
+ */
+router.post('/registrar-con-foto', uploadLogueo.single('foto'), marcacionesController.registrarMarcacionConFoto);
+
+/**
+ * POST /api/marcaciones/verificar-accion
+ * Verifica qué acción debe registrar un empleado (INGRESO o EGRESO)
+ * Body: { nombreEmpleado }
+ * Público - No requiere autenticación
+ */
+router.post('/verificar-accion', marcacionesController.verificarAccionPermitida);
 
 // ========================================
 // RUTAS PROTEGIDAS (requieren autenticación)

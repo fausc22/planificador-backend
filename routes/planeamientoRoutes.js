@@ -52,5 +52,8 @@ router.post('/generar/:anio', planeamientoController.generarTurnosYTotales);
 // Body: { colores: { "Juan Pérez": "#E3F2FD", ... } }
 router.post('/pdf/:mes/:anio', pdfPlanificadorController.generarPdfPlanificador);
 
+// POST - Generar PDF Semanal
+router.post('/pdf-semanal/:mes/:anio', pdfPlanificadorController.generarPdfSemanal);
+
 module.exports = router;
 
