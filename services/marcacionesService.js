@@ -155,14 +155,17 @@ function getCurrentYear() {
  */
 async function getLastLogueoToday(nombreEmpleado) {
     const year = getCurrentYear();
+    const fecha = formatearFecha(new Date());
     
+    // OPTIMIZACIÓN: Buscar solo en el día actual y solo los campos necesarios
     return new Promise((resolve, reject) => {
         db.query(
-            `SELECT * FROM logueo_${year} 
-             WHERE nombre_empleado = ? 
+            `SELECT id, nombre_empleado, accion, hora, fecha 
+             FROM logueo_${year} 
+             WHERE nombre_empleado = ? AND fecha = ?
              ORDER BY id DESC 
              LIMIT 1`,
-            [nombreEmpleado],
+            [nombreEmpleado, fecha],
             (error, results) => {
                 if (error) {
                     console.error('Error obteniendo último logueo:', error);
@@ -409,59 +412,53 @@ async function procesarMarcacion(empleado, accion, userLatitude = null, userLong
  * @param {string} fotoNombre - Nombre del archivo de foto
  */
 async function procesarMarcacionConFoto(empleado, accion, fotoPath, fotoNombre) {
-    try {
-        // 1. Validar acción (evitar doble ingreso/egreso)
-        const nombreCompleto = `${empleado.nombre} ${empleado.apellido}`;
-        console.log(`✓ Validando acción ${accion} para ${nombreCompleto}...`);
-        
-        const actionValidation = await validateAction(nombreCompleto, accion);
-        
-        if (!actionValidation.valid) {
-            return {
-                success: false,
-                rechazado: true,
-                message: actionValidation.message
-            };
-        }
-        
-        // 2. Registrar logueo
-        const horaActual = new Date().toTimeString().split(' ')[0]; // HH:MM:SS
-        console.log(`✓ Acción válida. Registrando ${accion} a las ${horaActual}...`);
-        
-        await registrarLogueo(nombreCompleto, accion, horaActual, fotoNombre);
-        
-        let controlHsData = null;
-        
-        // 3. Si es EGRESO, calcular y registrar horas
-        if (accion === 'EGRESO' && actionValidation.ingresoData) {
-            console.log(`📊 Calculando horas trabajadas...`);
-            
-            controlHsData = await registrarControlHoras(
-                nombreCompleto,
-                actionValidation.ingresoData.hora,
-                horaActual,
-                empleado.hora_normal  // Precio por hora del empleado
-            );
-            
-            console.log(`✅ Control de horas registrado: ${controlHsData.horasTrabajadas} horas = $${controlHsData.acumulado}`);
-        }
-        
+    const nombreCompleto = `${empleado.nombre} ${empleado.apellido}`;
+    
+    // 1. Validar acción (evitar doble ingreso/egreso)
+    const actionValidation = await validateAction(nombreCompleto, accion);
+    
+    if (!actionValidation.valid) {
         return {
-            success: true,
-            rechazado: false,
-            message: `${accion} registrado exitosamente`,
-            data: {
-                empleado: nombreCompleto,
-                accion,
-                hora: horaActual,
-                controlHs: controlHsData
-            }
+            success: false,
+            rechazado: true,
+            message: actionValidation.message
         };
-        
-    } catch (error) {
-        console.error('❌ Error procesando marcación con foto:', error);
-        throw error;
     }
+    
+    // 2. Registrar logueo
+    const horaActual = new Date().toTimeString().split(' ')[0]; // HH:MM:SS
+    await registrarLogueo(nombreCompleto, accion, horaActual, fotoNombre);
+    
+    // 3. Si es EGRESO, calcular y registrar horas (en background para no bloquear)
+    let controlHsData = null;
+    if (accion === 'EGRESO' && actionValidation.ingresoData) {
+        // Procesar en background para no bloquear la respuesta
+        setImmediate(async () => {
+            try {
+                await registrarControlHoras(
+                    nombreCompleto,
+                    actionValidation.ingresoData.hora,
+                    horaActual,
+                    empleado.hora_normal
+                );
+                console.log(`✅ Control de horas registrado para ${nombreCompleto}`);
+            } catch (error) {
+                console.error('❌ Error registrando control de horas:', error);
+            }
+        });
+    }
+    
+    return {
+        success: true,
+        rechazado: false,
+        message: `${accion} registrado exitosamente`,
+        data: {
+            empleado: nombreCompleto,
+            accion,
+            hora: horaActual,
+            controlHs: controlHsData
+        }
+    };
 }
 
 /**

@@ -156,3 +156,91 @@ _Enviado desde el sistema de planificación_`;
     }
 };
 
+/**
+ * Obtiene el estado actual de las notificaciones (ON/OFF)
+ * Requiere autenticación
+ */
+exports.obtenerEstadoNotificaciones = async (req, res) => {
+    try {
+        const estado = process.env.NOTIFICACIONES_STATUS || 'ON';
+        
+        res.json({
+            success: true,
+            data: {
+                estado: estado,
+                activo: estado === 'ON'
+            }
+        });
+    } catch (error) {
+        console.error('❌ Error al obtener estado de notificaciones:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al obtener estado de notificaciones',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * Cambia el estado de las notificaciones (ON/OFF)
+ * Requiere autenticación
+ */
+exports.cambiarEstadoNotificaciones = async (req, res) => {
+    const fs = require('fs');
+    const path = require('path');
+    
+    try {
+        const { estado } = req.body;
+        
+        // Validar el estado
+        if (!estado || (estado !== 'ON' && estado !== 'OFF')) {
+            return res.status(400).json({
+                success: false,
+                message: 'Estado inválido. Debe ser ON u OFF'
+            });
+        }
+
+        const envPath = path.join(__dirname, '../.env');
+        let envContent = '';
+
+        // Leer el archivo .env si existe
+        if (fs.existsSync(envPath)) {
+            envContent = fs.readFileSync(envPath, 'utf8');
+        }
+
+        // Verificar si la variable ya existe en el .env
+        const regex = /^NOTIFICACIONES_STATUS=.*$/m;
+        if (regex.test(envContent)) {
+            // Actualizar la variable existente
+            envContent = envContent.replace(regex, `NOTIFICACIONES_STATUS=${estado}`);
+        } else {
+            // Agregar la variable al final del archivo
+            envContent += `${envContent.endsWith('\n') ? '' : '\n'}NOTIFICACIONES_STATUS=${estado}\n`;
+        }
+
+        // Escribir el archivo .env
+        fs.writeFileSync(envPath, envContent, 'utf8');
+
+        // Actualizar la variable en el proceso actual
+        process.env.NOTIFICACIONES_STATUS = estado;
+
+        console.log(`✅ Estado de notificaciones cambiado a: ${estado}`);
+
+        res.json({
+            success: true,
+            message: `Notificaciones ${estado === 'ON' ? 'activadas' : 'desactivadas'} correctamente`,
+            data: {
+                estado: estado,
+                activo: estado === 'ON'
+            }
+        });
+    } catch (error) {
+        console.error('❌ Error al cambiar estado de notificaciones:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al cambiar estado de notificaciones',
+            error: error.message
+        });
+    }
+};
+

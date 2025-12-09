@@ -92,6 +92,109 @@ exports.obtenerEmpleadoPorNombre = async (req, res) => {
 };
 
 // Crear nuevo empleado
+// Versión Base64 para crear empleado
+exports.crearEmpleadoBase64 = async (req, res) => {
+    try {
+        console.log('📝 [BASE64] Creando empleado con foto Base64');
+        
+        const {
+            nombre,
+            apellido,
+            mail,
+            fecha_ingreso,
+            antiguedad,
+            hora_normal,
+            dia_vacaciones,
+            horas_vacaciones,
+            fotoBase64
+        } = req.body;
+
+        // Validaciones básicas
+        if (!nombre || !apellido || !mail || !fecha_ingreso || !hora_normal) {
+            return res.status(400).json({
+                success: false,
+                message: 'Faltan campos obligatorios'
+            });
+        }
+
+        let foto_perfil_url = null;
+        
+        // Procesar foto Base64 si existe
+        if (fotoBase64) {
+            const matches = fotoBase64.match(/^data:([A-Za-z0-9+/-]+);base64,(.+)$/);
+            if (matches && matches.length === 3) {
+                const mimeType = matches[1];
+                const imageData = matches[2];
+                const buffer = Buffer.from(imageData, 'base64');
+                
+                // Generar nombre único
+                const timestamp = Date.now();
+                const random = Math.floor(Math.random() * 1000000);
+                const ext = mimeType === 'image/png' ? '.png' : '.jpg';
+                const nombreFoto = `empleado-${timestamp}-${random}${ext}`;
+                
+                // Guardar archivo (desde controllers/ subir 1 nivel)
+                const path = require('path');
+                const fs = require('fs');
+                const uploadDir = path.join(__dirname, '../public/uploads/empleados');
+                
+                if (!fs.existsSync(uploadDir)) {
+                    fs.mkdirSync(uploadDir, { recursive: true });
+                }
+                
+                const filePath = path.join(uploadDir, nombreFoto);
+                await require('fs').promises.writeFile(filePath, buffer);
+                
+                foto_perfil_url = nombreFoto;
+                console.log('✅ Foto guardada:', foto_perfil_url);
+            }
+        }
+
+        // Insertar empleado
+        const [result] = await db.execute(
+            `INSERT INTO empleados (nombre, apellido, mail, fecha_ingreso, antiguedad, hora_normal, dia_vacaciones, horas_vacaciones, foto_perfil_url) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                nombre,
+                apellido,
+                mail,
+                fecha_ingreso,
+                antiguedad || 0,
+                hora_normal,
+                dia_vacaciones || 14,
+                horas_vacaciones || 0,
+                foto_perfil_url
+            ]
+        );
+
+        const empleadoId = result.insertId;
+        const nombreCompleto = `${nombre} ${apellido}`;
+
+        // Generar turnos automáticamente
+        try {
+            await db.execute('CALL generar_turnos_empleado(?, ?, ?)', [nombreCompleto, 2024, 2027]);
+            console.log(`✅ Turnos generados para ${nombreCompleto}`);
+        } catch (errorTurnos) {
+            console.error(`⚠️ Error generando turnos:`, errorTurnos.message);
+        }
+
+        res.status(201).json({
+            success: true,
+            message: 'Empleado creado exitosamente',
+            empleadoId,
+            turnosGenerados: true,
+            foto_perfil_url: foto_perfil_url ? `/uploads/empleados/${foto_perfil_url}` : null
+        });
+    } catch (error) {
+        console.error('❌ Error creando empleado Base64:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al crear empleado',
+            error: error.message
+        });
+    }
+};
+
 exports.crearEmpleado = async (req, res) => {
     try {
         console.log('📝 Datos recibidos:', req.body);
@@ -377,9 +480,23 @@ exports.actualizarEmpleado = async (req, res) => {
             aplicar_cambio_tarifa // 'retroactivo_mes', 'desde_hoy', 'proximo_mes', o null
         } = req.body;
 
+        // Debug: Log de los datos recibidos
+        console.log('📝 Datos recibidos para actualizar empleado:', {
+            id,
+            nombre,
+            apellido,
+            mail,
+            fecha_ingreso,
+            antiguedad,
+            hora_normal,
+            dia_vacaciones,
+            horas_vacaciones,
+            tieneArchivo: !!req.file
+        });
+
         // Verificar que el empleado existe y obtener datos actuales
         const [empleados] = await connection.execute(
-            'SELECT id, foto_perfil_url, hora_normal as hora_normal_anterior, CONCAT(nombre, " ", apellido) as nombre_completo FROM empleados WHERE id = ?',
+            'SELECT * FROM empleados WHERE id = ?',
             [id]
         );
 
@@ -392,33 +509,103 @@ exports.actualizarEmpleado = async (req, res) => {
         }
 
         const empleado = empleados[0];
-        const horaNormalAnterior = empleado.hora_normal_anterior;
-        const nombreCompleto = empleado.nombre_completo;
-        const horaNormalNueva = parseFloat(hora_normal);
+        const horaNormalAnterior = empleado.hora_normal;
+        const nombreCompleto = `${empleado.nombre} ${empleado.apellido}`;
+        const horaNormalNueva = hora_normal ? parseFloat(hora_normal) : parseFloat(empleado.hora_normal);
 
-        // Si hay nueva foto, actualizar también
-        const foto_perfil_url = req.file ? req.file.filename : empleado.foto_perfil_url;
+        // Si hay nueva foto, actualizar también, sino mantener la actual
+        const foto_perfil_url = req.file ? req.file.filename : (empleado.foto_perfil_url || null);
 
-        // Actualizar datos del empleado
-        await connection.execute(
+        // Función helper para valores: usar el enviado si existe y es válido, sino usar el del empleado
+        const getValueOrDefault = (newValue, currentValue) => {
+            // Si el nuevo valor existe y no está vacío, usarlo
+            if (newValue !== undefined && newValue !== null && String(newValue).trim() !== '') {
+                return String(newValue).trim();
+            }
+            // Si no, usar el valor actual
+            return currentValue !== undefined && currentValue !== null ? String(currentValue) : '';
+        };
+        
+        // Función helper para valores numéricos
+        const getNumericOrDefault = (newValue, currentValue, fallback = 0) => {
+            // Si el nuevo valor existe y no está vacío, intentar parsearlo
+            if (newValue !== undefined && newValue !== null && String(newValue).trim() !== '') {
+                const num = parseFloat(newValue);
+                if (!isNaN(num)) return num;
+            }
+            // Si no, usar el valor actual parseado
+            if (currentValue !== undefined && currentValue !== null) {
+                const num = parseFloat(currentValue);
+                if (!isNaN(num)) return num;
+            }
+            return fallback;
+        };
+
+        // Preparar valores finales: usar el valor enviado si es válido (no vacío), sino usar el actual
+        // Esto asegura que los cambios se guarden correctamente
+        const nombreFinal = (nombre !== undefined && String(nombre).trim() !== '') 
+            ? String(nombre).trim() 
+            : empleado.nombre;
+        const apellidoFinal = (apellido !== undefined && String(apellido).trim() !== '') 
+            ? String(apellido).trim() 
+            : empleado.apellido;
+        const mailFinal = (mail !== undefined && String(mail).trim() !== '') 
+            ? String(mail).trim() 
+            : empleado.mail;
+        const fechaIngresoFinal = (fecha_ingreso !== undefined && String(fecha_ingreso).trim() !== '') 
+            ? String(fecha_ingreso).trim() 
+            : empleado.fecha_ingreso;
+        const antiguedadFinal = getNumericOrDefault(antiguedad, empleado.antiguedad, 0);
+        const horaNormalFinal = getNumericOrDefault(hora_normal, empleado.hora_normal, 0);
+        const diaVacacionesFinal = getNumericOrDefault(dia_vacaciones, empleado.dia_vacaciones, 14);
+        const horasVacacionesFinal = getNumericOrDefault(horas_vacaciones, empleado.horas_vacaciones, 0);
+
+        // Debug: Log de los valores finales que se van a guardar
+        console.log('💾 Valores finales a guardar:', {
+            nombreFinal,
+            apellidoFinal,
+            mailFinal,
+            fechaIngresoFinal,
+            antiguedadFinal,
+            horaNormalFinal,
+            diaVacacionesFinal,
+            horasVacacionesFinal,
+            foto_perfil_url
+        });
+
+        // Actualizar datos del empleado - asegurarse de que ningún parámetro sea undefined
+        const [updateResult] = await connection.execute(
             `UPDATE empleados 
              SET nombre = ?, apellido = ?, mail = ?, fecha_ingreso = ?, 
                  antiguedad = ?, hora_normal = ?, dia_vacaciones = ?, horas_vacaciones = ?,
                  foto_perfil_url = ?
              WHERE id = ?`,
             [
-                nombre,
-                apellido,
-                mail,
-                fecha_ingreso,
-                antiguedad,
-                hora_normal,
-                dia_vacaciones,
-                horas_vacaciones,
+                nombreFinal,
+                apellidoFinal,
+                mailFinal,
+                fechaIngresoFinal,
+                antiguedadFinal,
+                horaNormalFinal,
+                diaVacacionesFinal,
+                horasVacacionesFinal,
                 foto_perfil_url,
                 id
             ]
         );
+
+        console.log('✅ Resultado de UPDATE:', {
+            affectedRows: updateResult.affectedRows,
+            changedRows: updateResult.changedRows
+        });
+
+        if (updateResult.affectedRows === 0) {
+            await connection.rollback();
+            return res.status(404).json({
+                success: false,
+                message: 'No se pudo actualizar el empleado. Verifica que el ID sea correcto.'
+            });
+        }
 
         // Si cambió la hora_normal y se especificó cómo aplicar el cambio
         if (horaNormalAnterior !== horaNormalNueva && aplicar_cambio_tarifa) {
@@ -676,6 +863,140 @@ exports.calcularAntiguedad = (req, res) => {
             message: 'Error al calcular antigüedad',
             error: error.message
         });
+    }
+};
+
+// Generar/sobreescribir registros en TURNOS y TOTALES para todos los empleados (ENDPOINT PÚBLICO)
+exports.verificarYGenerarRegistrosPlanificador = async (req, res) => {
+    const connection = await db.getConnection();
+    
+    try {
+        await connection.beginTransaction();
+        
+        // Obtener todos los empleados
+        const [empleados] = await connection.execute(
+            'SELECT id, nombre, apellido FROM empleados ORDER BY nombre ASC'
+        );
+        
+        if (empleados.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({
+                success: false,
+                message: 'No se encontraron empleados'
+            });
+        }
+        
+        const anioInicio = 2024; // Año desde el cual se generan los turnos
+        const anioFin = 2027; // Año hasta el cual se generan los turnos
+        
+        const resultados = {
+            empleadosProcesados: 0,
+            empleadosActualizados: [],
+            empleadosConError: []
+        };
+        
+        // Procesar cada empleado
+        for (const empleado of empleados) {
+            try {
+                const nombreCompleto = `${empleado.nombre} ${empleado.apellido}`;
+                
+                // Eliminar registros existentes antes de generar nuevos (sobreescribir)
+                for (let anio = anioInicio; anio <= anioFin; anio++) {
+                    const tablaTurnos = `turnos_${anio}`;
+                    const tablaTotales = `totales_${anio}`;
+                    
+                    // Verificar si las tablas existen
+                    const [tablaTurnosExiste] = await connection.execute(
+                        `SELECT COUNT(*) as count FROM information_schema.tables 
+                         WHERE table_schema = DATABASE() AND table_name = ?`,
+                        [tablaTurnos]
+                    );
+                    
+                    if (tablaTurnosExiste[0].count === 0) {
+                        console.log(`⚠️  Tabla ${tablaTurnos} no existe, saltando año ${anio}`);
+                        continue;
+                    }
+                    
+                    // Eliminar registros existentes en TURNOS
+                    try {
+                        await connection.execute(
+                            `DELETE FROM ${tablaTurnos} WHERE nombre_empleado = ?`,
+                            [nombreCompleto]
+                        );
+                    } catch (errorDeleteTurnos) {
+                        console.error(`⚠️  Error al eliminar turnos de ${tablaTurnos} para ${nombreCompleto}:`, errorDeleteTurnos.message);
+                    }
+                    
+                    // Eliminar registros existentes en TOTALES
+                    try {
+                        await connection.execute(
+                            `DELETE FROM ${tablaTotales} WHERE nombre_empleado = ?`,
+                            [nombreCompleto]
+                        );
+                    } catch (errorDeleteTotales) {
+                        console.error(`⚠️  Error al eliminar totales de ${tablaTotales} para ${nombreCompleto}:`, errorDeleteTotales.message);
+                    }
+                }
+                
+                // Generar turnos y totales usando el procedimiento almacenado (sobreescribe todo)
+                try {
+                    await connection.execute(
+                        'CALL generar_turnos_empleado(?, ?, ?)',
+                        [nombreCompleto, anioInicio, anioFin]
+                    );
+                    
+                    resultados.empleadosActualizados.push({
+                        id: empleado.id,
+                        nombre: nombreCompleto,
+                        estado: 'Registros generados/sobreescritos'
+                    });
+                    
+                    console.log(`✅ Registros generados/sobreescritos para ${nombreCompleto}`);
+                } catch (errorGenerar) {
+                    console.error(`❌ Error al generar registros para ${nombreCompleto}:`, errorGenerar.message);
+                    resultados.empleadosConError.push({
+                        id: empleado.id,
+                        nombre: nombreCompleto,
+                        error: errorGenerar.message
+                    });
+                }
+                
+                resultados.empleadosProcesados++;
+            } catch (errorEmpleado) {
+                console.error(`❌ Error al procesar empleado ${empleado.nombre}:`, errorEmpleado.message);
+                resultados.empleadosConError.push({
+                    id: empleado.id,
+                    nombre: `${empleado.nombre} ${empleado.apellido}`,
+                    error: errorEmpleado.message
+                });
+            }
+        }
+        
+        await connection.commit();
+        
+        res.json({
+            success: true,
+            message: `Proceso completado. ${resultados.empleadosActualizados.length} empleado(s) procesado(s) exitosamente.`,
+            resumen: {
+                totalEmpleados: resultados.empleadosProcesados,
+                exitosos: resultados.empleadosActualizados.length,
+                conError: resultados.empleadosConError.length
+            },
+            empleadosActualizados: resultados.empleadosActualizados,
+            empleadosConError: resultados.empleadosConError,
+            aniosProcesados: `${anioInicio}-${anioFin}`
+        });
+        
+    } catch (error) {
+        await connection.rollback();
+        console.error('❌ Error al generar/sobreescribir registros:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al generar/sobreescribir registros',
+            error: error.message
+        });
+    } finally {
+        connection.release();
     }
 };
 

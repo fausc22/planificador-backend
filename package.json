@@ -8,7 +8,9 @@
         "dev": "nodemon server.js",
         "test": "node test-connection.js",
         "setup": "node scripts/setup-inicial.js",
-        "crear-admin": "node scripts/crear-usuario-admin.js"
+        "crear-admin": "node scripts/crear-usuario-admin.js",
+        "crear-usuario": "node scripts/crear-usuario.js",
+        "listar-usuarios": "node scripts/listar-usuarios.js"
     },
     "keywords": [
         "planificacion",

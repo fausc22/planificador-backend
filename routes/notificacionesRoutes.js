@@ -19,5 +19,11 @@ router.get('/whatsapp/estado', notificacionesController.obtenerEstadoWhatsApp);
 // POST - Enviar mensaje de prueba por WhatsApp
 router.post('/whatsapp/enviar-prueba', notificacionesController.enviarMensajePrueba);
 
+// GET - Obtener estado de notificaciones (ON/OFF)
+router.get('/estado', notificacionesController.obtenerEstadoNotificaciones);
+
+// POST - Cambiar estado de notificaciones (ON/OFF)
+router.post('/estado', notificacionesController.cambiarEstadoNotificaciones);
+
 module.exports = router;
 

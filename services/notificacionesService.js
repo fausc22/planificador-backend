@@ -5,7 +5,7 @@ const { obtenerFechaActual, parsearFecha } = require('../utils/dateUtils');
 /**
  * Verifica logueos faltantes basado en los turnos del planificador
  * Compara turnos del día actual con logueos registrados
- * Margen: 30 minutos antes y 30 minutos después de la hora de inicio del turno
+ * Solo notifica 30 minutos después del horario esperado (ingreso o egreso)
  */
 async function verificarLogueosFaltantes() {
     try {
@@ -13,6 +13,17 @@ async function verificarLogueosFaltantes() {
         const anio = new Date().getFullYear();
         const tablaTurnos = `turnos_${anio}`;
         const tablaLogueos = `logueo_${anio}`;
+        
+        // Obtener hora actual
+        const ahora = new Date();
+        const horaActual = ahora.getHours();
+        const minutosActuales = ahora.getMinutes();
+        const minutosTotalesActuales = horaActual * 60 + minutosActuales;
+        
+        // Obtener fecha anterior para turnos nocturnos
+        const fechaAnterior = new Date(ahora);
+        fechaAnterior.setDate(fechaAnterior.getDate() - 1);
+        const fechaAnteriorStr = `${String(fechaAnterior.getDate()).padStart(2, '0')}/${String(fechaAnterior.getMonth() + 1).padStart(2, '0')}/${fechaAnterior.getFullYear()}`;
         
         // Obtener todos los turnos del día actual
         const [turnosHoy] = await db.execute(
@@ -26,43 +37,125 @@ async function verificarLogueosFaltantes() {
             [fechaActual]
         );
         
-        if (turnosHoy.length === 0) {
-            return [];
-        }
+        // Obtener turnos del día anterior que sean nocturnos (para verificar egresos de hoy)
+        const [turnosAnterior] = await db.execute(
+            `SELECT t.nombre_empleado, t.turno, t.fecha
+             FROM ${tablaTurnos} t
+             WHERE t.fecha = ?
+             AND t.turno IS NOT NULL
+             AND t.turno != ''
+             AND t.turno != 'Libre'
+             AND t.turno != 'VACACIONES'`,
+            [fechaAnteriorStr]
+        );
         
-        // Obtener información de horarios (horaInicio) para cada turno
+        // Obtener información de horarios (horaInicio y horaFin) para cada turno
         const turnosConHorario = [];
+        
+        // Procesar turnos del día actual
         for (const turno of turnosHoy) {
             const [horarios] = await db.execute(
-                'SELECT horaInicio FROM horarios WHERE turnos = ?',
+                'SELECT horaInicio, horaFin FROM horarios WHERE turnos = ?',
                 [turno.turno]
             );
             
             if (horarios.length > 0) {
+                const esTurnoNocturno = horarios[0].horaFin < horarios[0].horaInicio;
                 turnosConHorario.push({
                     nombre_empleado: turno.nombre_empleado,
                     turno: turno.turno,
                     horaInicio: horarios[0].horaInicio, // Hora en formato 0-23
-                    fecha: turno.fecha
+                    horaFin: horarios[0].horaFin, // Hora en formato 0-23
+                    fecha: turno.fecha,
+                    esTurnoNocturno: esTurnoNocturno
                 });
             }
         }
         
-        // Obtener logueos de INGRESO del día actual
+        // Procesar turnos del día anterior que sean nocturnos (para verificar egresos de hoy)
+        for (const turno of turnosAnterior) {
+            const [horarios] = await db.execute(
+                'SELECT horaInicio, horaFin FROM horarios WHERE turnos = ?',
+                [turno.turno]
+            );
+            
+            if (horarios.length > 0) {
+                const esTurnoNocturno = horarios[0].horaFin < horarios[0].horaInicio;
+                // Solo agregar turnos nocturnos del día anterior (que terminan hoy)
+                if (esTurnoNocturno) {
+                    turnosConHorario.push({
+                        nombre_empleado: turno.nombre_empleado,
+                        turno: turno.turno,
+                        horaInicio: horarios[0].horaInicio, // Hora en formato 0-23
+                        horaFin: horarios[0].horaFin, // Hora en formato 0-23
+                        fecha: turno.fecha, // Fecha del día anterior (día del turno)
+                        esTurnoNocturno: true
+                    });
+                }
+            }
+        }
+        
+        if (turnosConHorario.length === 0) {
+            return [];
+        }
+        
+        // Obtener logueos de INGRESO y EGRESO del día actual
         const [logueosHoy] = await db.execute(
+            `SELECT nombre_empleado, hora, accion
+             FROM ${tablaLogueos}
+             WHERE fecha = ?
+             ORDER BY nombre_empleado, hora`,
+            [fechaActual]
+        );
+        
+        // Obtener logueos del día siguiente (para turnos nocturnos - egresos)
+        const fechaSiguiente = new Date(ahora);
+        fechaSiguiente.setDate(fechaSiguiente.getDate() + 1);
+        const fechaSiguienteStr = `${String(fechaSiguiente.getDate()).padStart(2, '0')}/${String(fechaSiguiente.getMonth() + 1).padStart(2, '0')}/${fechaSiguiente.getFullYear()}`;
+        
+        const [logueosSiguiente] = await db.execute(
+            `SELECT nombre_empleado, hora, accion
+             FROM ${tablaLogueos}
+             WHERE fecha = ?
+             AND accion = 'EGRESO'
+             ORDER BY nombre_empleado, hora`,
+            [fechaSiguienteStr]
+        );
+        
+        // Obtener logueos del día anterior (para verificar ingresos de turnos nocturnos)
+        const [logueosAnterior] = await db.execute(
             `SELECT nombre_empleado, hora, accion
              FROM ${tablaLogueos}
              WHERE fecha = ?
              AND accion = 'INGRESO'
              ORDER BY nombre_empleado, hora`,
-            [fechaActual]
+            [fechaAnteriorStr]
         );
         
-        // Crear mapa de logueos por empleado (tomar el primero si hay múltiples)
-        const logueosPorEmpleado = {};
+        // Crear mapa de logueos por empleado
+        const logueosPorEmpleado = {
+            INGRESO: {},
+            EGRESO: {},
+            INGRESO_ANTERIOR: {} // Para verificar ingresos del día anterior en turnos nocturnos
+        };
+        
         logueosHoy.forEach(logueo => {
-            if (!logueosPorEmpleado[logueo.nombre_empleado]) {
-                logueosPorEmpleado[logueo.nombre_empleado] = logueo;
+            if (!logueosPorEmpleado[logueo.accion][logueo.nombre_empleado]) {
+                logueosPorEmpleado[logueo.accion][logueo.nombre_empleado] = logueo;
+            }
+        });
+        
+        // Agregar egresos del día siguiente
+        logueosSiguiente.forEach(logueo => {
+            if (!logueosPorEmpleado.EGRESO[logueo.nombre_empleado]) {
+                logueosPorEmpleado.EGRESO[logueo.nombre_empleado] = logueo;
+            }
+        });
+        
+        // Agregar ingresos del día anterior (para turnos nocturnos)
+        logueosAnterior.forEach(logueo => {
+            if (!logueosPorEmpleado.INGRESO_ANTERIOR[logueo.nombre_empleado]) {
+                logueosPorEmpleado.INGRESO_ANTERIOR[logueo.nombre_empleado] = logueo;
             }
         });
         
@@ -70,18 +163,19 @@ async function verificarLogueosFaltantes() {
         const notificaciones = [];
         
         for (const turnoInfo of turnosConHorario) {
-            const { nombre_empleado, turno, horaInicio, fecha } = turnoInfo;
-            const logueo = logueosPorEmpleado[nombre_empleado];
+            const { nombre_empleado, turno, horaInicio, horaFin, fecha, esTurnoNocturno } = turnoInfo;
+            const logueoIngreso = logueosPorEmpleado.INGRESO[nombre_empleado];
+            const logueoEgreso = logueosPorEmpleado.EGRESO[nombre_empleado];
             
-            // Convertir horaInicio a minutos desde medianoche para facilitar comparación
+            // Verificar INGRESO (solo para turnos del día actual, no para turnos nocturnos del día anterior)
+            if (fecha === fechaActual) {
             const horaInicioMinutos = horaInicio * 60;
-            const margenAntes = 30; // 30 minutos antes
-            const margenDespues = 30; // 30 minutos después
-            const horaMinima = horaInicioMinutos - margenAntes;
-            const horaMaxima = horaInicioMinutos + margenDespues;
-            
-            if (!logueo) {
-                // No hay logueo registrado
+                const horaInicioLimite = horaInicioMinutos + 30; // 30 minutos después del horario de ingreso
+                
+                // Solo verificar ingreso si ya pasaron 30 minutos después del horario esperado
+                if (minutosTotalesActuales >= horaInicioLimite) {
+                    if (!logueoIngreso) {
+                        // No hay logueo de INGRESO registrado
                 const horaInicioFormato = `${String(horaInicio).padStart(2, '0')}:00`;
                 notificaciones.push({
                     tipo: 'FALTA_LOGUEO',
@@ -91,31 +185,58 @@ async function verificarLogueosFaltantes() {
                     horaTurno: horaInicioFormato,
                     mensaje: `${nombre_empleado} tiene turno ${turno} a las ${horaInicioFormato} pero no registró INGRESO`,
                     fecha: fecha,
-                    horaEsperada: `${String(Math.floor(horaMinima / 60)).padStart(2, '0')}:${String(horaMinima % 60).padStart(2, '0')} - ${String(Math.floor(horaMaxima / 60)).padStart(2, '0')}:${String(horaMaxima % 60).padStart(2, '0')}`
-                });
-            } else {
-                // Hay logueo, verificar si está dentro del margen
-                const [hora, minutos] = logueo.hora.split(':').map(Number);
-                const logueoMinutos = hora * 60 + minutos;
+                            accion: 'INGRESO'
+                        });
+                    }
+                }
+            }
+            
+            // Verificar EGRESO
+            let debeVerificarEgreso = false;
+            
+            if (esTurnoNocturno) {
+                // Turno nocturno: el egreso es del día siguiente (ej: 19 a 2)
+                // Solo verificar si:
+                // 1. Estamos en el día siguiente (después de medianoche)
+                // 2. Ya pasaron 30 minutos después del horario de egreso
+                // 3. Hubo un INGRESO el día del turno (fecha del turno, que es el día anterior)
+                const ingresoDelDiaTurno = fecha === fechaAnteriorStr 
+                    ? logueosPorEmpleado.INGRESO_ANTERIOR[nombre_empleado]
+                    : null;
                 
-                if (logueoMinutos < horaMinima || logueoMinutos > horaMaxima) {
-                    // Logueo fuera del margen permitido
-                    const horaInicioFormato = `${String(horaInicio).padStart(2, '0')}:00`;
-                    const horaRegistrada = logueo.hora;
-                    const fueraMargen = logueoMinutos < horaMinima ? 'ANTES' : 'DESPUÉS';
+                if (horaActual >= 0 && ingresoDelDiaTurno) {
+                    // Estamos en el día siguiente y hubo ingreso el día del turno
+                    const minutosDesdeMedianoche = horaActual * 60 + minutosActuales;
+                    const horaFinMinutos = horaFin * 60;
+                    const horaFinLimite = horaFinMinutos + 30; // 30 minutos después del horario de egreso
+                    debeVerificarEgreso = minutosDesdeMedianoche >= horaFinLimite;
+                }
+                // Si no hay ingreso del día del turno o todavía estamos en el día del ingreso, no verificar egreso
+            } else {
+                // Turno diurno: el egreso es del mismo día
+                // Solo verificar si hay un ingreso del mismo día
+                if (fecha === fechaActual && logueoIngreso) {
+                    const horaFinMinutos = horaFin * 60;
+                    const horaFinLimite = horaFinMinutos + 30; // 30 minutos después del horario de egreso
+                    debeVerificarEgreso = minutosTotalesActuales >= horaFinLimite;
+                }
+            }
+            
+            if (debeVerificarEgreso && !logueoEgreso) {
+                // No hay logueo de EGRESO registrado
+                const horaFinFormato = `${String(horaFin).padStart(2, '0')}:00`;
+                const fechaEgreso = esTurnoNocturno ? fechaSiguienteStr : fecha;
                     
                     notificaciones.push({
-                        tipo: 'LOGUEO_FUERA_MARGEN',
-                        severidad: 'MEDIA',
+                    tipo: 'FALTA_LOGUEO',
+                    severidad: 'ALTA',
                         empleado: nombre_empleado,
                         turno: turno,
-                        horaTurno: horaInicioFormato,
-                        horaRegistrada: horaRegistrada,
-                        mensaje: `${nombre_empleado} registró INGRESO a las ${horaRegistrada} pero su turno ${turno} es a las ${horaInicioFormato} (fuera del margen de ±30 min)`,
-                        fecha: fecha,
-                        fueraMargen: fueraMargen
+                    horaTurno: horaFinFormato,
+                    mensaje: `${nombre_empleado} tiene turno ${turno} con egreso a las ${horaFinFormato} pero no registró EGRESO`,
+                    fecha: fechaEgreso,
+                    accion: 'EGRESO'
                     });
-                }
             }
         }
         
@@ -184,12 +305,20 @@ async function guardarNotificacion(notificacion, whatsappEnviado = false) {
 /**
  * Envía notificación por WhatsApp
  * Conecta WhatsApp, envía el mensaje y se desconecta automáticamente
+ * Verifica el estado de las notificaciones antes de enviar
  * @param {Object} notificacion - Objeto de notificación
  * @returns {Promise<boolean>} - True si se envió exitosamente
  */
 async function enviarNotificacionWhatsApp(notificacion) {
     const whatsappService = require('./whatsappService');
     const adminPhone = process.env.ADMIN_PHONE;
+    const notificacionesStatus = process.env.NOTIFICACIONES_STATUS || 'ON';
+    
+    // Verificar si las notificaciones están desactivadas
+    if (notificacionesStatus === 'OFF') {
+        console.log('⚠️ Notificaciones WhatsApp desactivadas (NOTIFICACIONES_STATUS=OFF). Saltando envío.');
+        return false;
+    }
     
     if (!adminPhone) {
         console.log('⚠️ ADMIN_PHONE no configurado en .env. Saltando envío de WhatsApp.');

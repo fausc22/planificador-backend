@@ -1,10 +1,11 @@
 // middlewares/uploadLogueo.js - Configuración de Multer para subida de fotos de logueos
+// PATRÓN IDÉNTICO A upload.js (empleados) que funciona correctamente
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
 // Crear directorio si no existe
-const uploadDir = path.join(__dirname, '../public/uploads/logueos');
+const uploadDir = path.join(__dirname, '../../public/uploads/logueos');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
@@ -15,23 +16,26 @@ const storage = multer.diskStorage({
         cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
-        // El nombre se generará en el controller con el formato especificado
-        // Por ahora, usar un nombre temporal
+        // Generar nombre único: logueo_timestamp.ext
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const ext = path.extname(file.originalname) || '.jpg';
-        cb(null, `logueo-temp-${uniqueSuffix}${ext}`);
+        const ext = path.extname(file.originalname);
+        cb(null, `logueo-${uniqueSuffix}${ext}`);
     }
 });
 
 // Filtro de archivos (solo imágenes)
 const fileFilter = (req, file, cb) => {
+    console.log('🔍 [MULTER] Validando archivo:', file.originalname, 'mimetype:', file.mimetype);
+    
     const allowedTypes = /jpeg|jpg|png|gif|webp/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
-
-    if (mimetype && extname) {
+    
+    // Aceptar si la extensión es válida (ignorar mimetype por el proxy PHP)
+    if (extname) {
+        console.log('✅ [MULTER] Archivo aceptado por extensión');
         return cb(null, true);
     } else {
+        console.log('❌ [MULTER] Archivo rechazado');
         cb(new Error('Solo se permiten imágenes (jpeg, jpg, png, gif, webp)'));
     }
 };
@@ -46,4 +50,3 @@ const uploadLogueo = multer({
 });
 
 module.exports = uploadLogueo;
-

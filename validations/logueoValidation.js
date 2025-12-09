@@ -1,6 +1,36 @@
 // validations/logueoValidation.js - Esquemas de validación para logueos
 const Joi = require('joi');
 
+// Función auxiliar para normalizar hora: convierte HH:MM a HH:MM:SS
+const normalizarHora = (value, helpers) => {
+    if (!value || typeof value !== 'string') {
+        return helpers.error('any.required');
+    }
+    
+    // Si ya tiene formato HH:MM:SS, validar y retornar
+    if (/^\d{2}:\d{2}:\d{2}$/.test(value)) {
+        // Validar que las horas y minutos sean válidos
+        const [h, m, s] = value.split(':').map(Number);
+        if (h >= 0 && h < 24 && m >= 0 && m < 60 && s >= 0 && s < 60) {
+            return value;
+        }
+        return helpers.error('string.pattern.base');
+    }
+    
+    // Si tiene formato HH:MM, agregar :00
+    if (/^\d{2}:\d{2}$/.test(value)) {
+        // Validar que las horas y minutos sean válidos
+        const [h, m] = value.split(':').map(Number);
+        if (h >= 0 && h < 24 && m >= 0 && m < 60) {
+            return `${value}:00`;
+        }
+        return helpers.error('string.pattern.base');
+    }
+    
+    // Si no coincide con ningún formato válido, retornar error
+    return helpers.error('string.pattern.base');
+};
+
 // Esquema para crear logueo
 const crearLogueoSchema = Joi.object({
     nombre_empleado: Joi.string()
@@ -32,10 +62,10 @@ const crearLogueoSchema = Joi.object({
         }),
     
     hora: Joi.string()
-        .pattern(/^\d{2}:\d{2}:\d{2}$/)
         .required()
+        .custom(normalizarHora, 'normalizar hora a HH:MM:SS')
         .messages({
-            'string.pattern.base': 'La hora debe estar en formato HH:MM:SS',
+            'string.pattern.base': 'La hora debe estar en formato HH:MM o HH:MM:SS',
             'any.required': 'La hora es obligatoria'
         }),
     
@@ -52,10 +82,10 @@ const crearLogueoSchema = Joi.object({
 // Esquema para actualizar logueo
 const actualizarLogueoSchema = Joi.object({
     hora: Joi.string()
-        .pattern(/^\d{2}:\d{2}:\d{2}$/)
         .required()
+        .custom(normalizarHora, 'normalizar hora a HH:MM:SS')
         .messages({
-            'string.pattern.base': 'La hora debe estar en formato HH:MM:SS',
+            'string.pattern.base': 'La hora debe estar en formato HH:MM o HH:MM:SS',
             'any.required': 'La hora es obligatoria'
         })
 });

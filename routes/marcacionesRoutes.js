@@ -33,13 +33,19 @@ router.post('/generar-qr', marcacionesController.generarQR);
 router.post('/registrar', marcacionesController.registrarMarcacion);
 
 /**
- * POST /api/marcaciones/registrar-con-foto
- * Registra una marcación con foto (INGRESO o EGRESO)
- * Body: { email, password, accion }
- * FormData: foto (archivo de imagen)
+ * POST /api/marcaciones/registrar-con-foto-base64
+ * Registra una marcación con foto en Base64 (INGRESO o EGRESO)
+ * Body: { email, password, accion, fotoBase64 }
  * Público - Valida email, contraseña y procesa marcación con foto
+ * PATRÓN BASE64 - Funciona con proxy PHP sin problemas
  */
-router.post('/registrar-con-foto', uploadLogueo.single('foto'), marcacionesController.registrarMarcacionConFoto);
+router.post('/registrar-con-foto-base64', marcacionesController.registrarMarcacionConFotoBase64);
+
+/**
+ * POST /api/marcaciones/registrar-con-foto (LEGACY - Multipart)
+ * Mantener por compatibilidad, pero usar Base64 en producción
+ */
+router.post('/registrar-con-foto', marcacionesController.registrarMarcacionConFoto);
 
 /**
  * POST /api/marcaciones/verificar-accion
@@ -48,6 +54,14 @@ router.post('/registrar-con-foto', uploadLogueo.single('foto'), marcacionesContr
  * Público - No requiere autenticación
  */
 router.post('/verificar-accion', marcacionesController.verificarAccionPermitida);
+
+/**
+ * POST /api/marcaciones/validar-password
+ * Valida la contraseña de asistencia
+ * Body: { password }
+ * Público - No requiere autenticación
+ */
+router.post('/validar-password', marcacionesController.validarPassword);
 
 // ========================================
 // RUTAS PROTEGIDAS (requieren autenticación)

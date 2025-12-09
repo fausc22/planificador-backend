@@ -5,6 +5,9 @@ const empleadosController = require('../controllers/empleadosController');
 const { verificarToken } = require('../middlewares/authMiddleware');
 const upload = require('../middlewares/upload');
 
+// POST - Verificar y generar registros faltantes en TURNOS y TOTALES para todos los empleados (ENDPOINT PÚBLICO)
+router.post('/verificar-generar-registros-planificador', empleadosController.verificarYGenerarRegistrosPlanificador);
+
 // Aplicar middleware de autenticación a todas las rutas
 router.use(verificarToken);
 
@@ -20,7 +23,10 @@ router.get('/nombre/:nombre', empleadosController.obtenerEmpleadoPorNombre);
 // GET - Obtener hora normal de un empleado
 router.get('/hora-normal/:nombre', empleadosController.obtenerHoraNormal);
 
-// POST - Crear nuevo empleado (con foto opcional)
+// POST - Crear nuevo empleado con foto Base64
+router.post('/base64', empleadosController.crearEmpleadoBase64);
+
+// POST - Crear nuevo empleado (con foto opcional - multipart)
 router.post('/', upload.single('foto_perfil'), empleadosController.crearEmpleado);
 
 // PUT - Actualizar empleado (con foto opcional)
